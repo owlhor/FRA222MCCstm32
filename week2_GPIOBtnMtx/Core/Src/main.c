@@ -43,8 +43,14 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 uint16_t BtnState = 0;
-uint16_t CodeCC = 0x00;
-static uint32_t counter = 0;
+static uint64_t CodeCC = 0;
+uint8_t DecoNum; // for debgg
+static uint16_t counter = 0;
+static uint16_t PeriodOfCnter = 100; // counter trigg& reset
+static uint8_t RiseTgr = 0; // std_logic boolean
+static uint8_t OkToggle = 0; // std_logic boolean
+//////mega challenga
+static uint64_t SaveCC = 63340500060;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -53,8 +59,9 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 void BtnMtxRd();
-//int DecoToNum();
-//void CounterSet();
+int DecoToNum();
+void CounterSet();
+int ShiftTest(int x);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -102,16 +109,50 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  //CounterSet();
-	  BtnMtxRd();
-	  //if(BtnState!= 0 && counter == 100){
-	//	  CodeCC = (CodeCC << 4) + DecoToNum();
-	  //}
+	CounterSet();
+	BtnMtxRd();
+	
+	// Add number in CodeCC
+	if(RiseTgr == 1 && counter == PeriodOfCnter){
+		  DecoNum = DecoToNum(); // debgg
+		  if ( 0 <= DecoNum && DecoNum <= 9){  // non number is unallow
+			  //CodeCC = (CodeCC << 4) + DecoNum;  // hex algor
+			  CodeCC = (CodeCC * 10) + DecoNum;  // dec algor
+			  } 
+		  RiseTgr = 0;
+		}
+		
+	// OkToggle
+	if (ShiftTest(15) == 1){OkToggle = 1;}
+	else if (RiseTgr == 1 && ShiftTest(15) == 0){OkToggle = 0;}
+	else{OkToggle = OkToggle;}
+	
+	// detect code	
+	if (CodeCC == SaveCC && OkToggle == 1){ 
+		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+	  }
+	else{HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);}
 
-
-//	  if((BtnState >> 3) & 0x01 == 1){ // Clear
-//		  CodeCC = 0x00;
-//	  }
+		// Clear
+	if( ShiftTest(3) == 1)
+		{ 
+		  CodeCC = 0x00;
+		}
+		// <x-- backspace
+	if(ShiftTest(7) == 1 && RiseTgr == 1)
+		{ 
+		  //CodeCC = CodeCC >> 4 ; // hex algor
+		  CodeCC = CodeCC / 10;  // dec algor
+		  RiseTgr = 0;
+		}
+	// Change password	
+	if(ShiftTest(12) == 1 && RiseTgr == 1)
+		{ 
+		  SaveCC = CodeCC;
+		  CodeCC = 0x00;
+		  RiseTgr = 0;
+		}
+	} // end while
 
   /* USER CODE END 3 */
 }
@@ -266,6 +307,12 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+/* ////  4x4 Matrix table numberpad
+	7	8	9	Clr	|	0	1	2	3
+	4	5	6	<x- |	4	5	6	7
+	1	2	3	_	|	8	9	10	11
+	_	0	_	ok 	|	12	13	14	15
+*/
 GPIO_TypeDef* BtnMtxPortR[4] = {R1_GPIO_Port,R2_GPIO_Port,R3_GPIO_Port,R4_GPIO_Port};
 uint16_t BtnMtxPinR[4] = {R1_Pin,R2_Pin,R3_Pin,R4_Pin};
 
@@ -274,78 +321,86 @@ uint16_t BtnMtxPinL[4] = {L1_Pin,L2_Pin,L3_Pin,L4_Pin};
 void BtnMtxRd(){// Read 4x4 Matrix button
 	static uint32_t timestp = 0;
 	static uint8_t CurntL = 0; // L that read L1 L2 L3 L4
-	if(HAL_GetTick() - timestp >= 100){ //call every 100 m sec
+	if(HAL_GetTick() - timestp >= 50){ //call every 100 m sec
 	 timestp = HAL_GetTick(); // stamp time
 	 for(int i = 0; i<4 ; i++){
 		 // read R
 		 if(HAL_GPIO_ReadPin(BtnMtxPortR[i], BtnMtxPinR[i])==GPIO_PIN_RESET){ // button pressed
 
 			 BtnState |= 1 << (i+(CurntL*4)); //ex i = 3, L = 2 => 0b0000 0100 0000 0000
+			 RiseTgr = 1;
 		 }
 		 else{
-			 // force 0 after unpressed 1 & x = x
+			 //// force 0 after unpressed 1 & x = x
 			 BtnState &= ~(1 << (i+(CurntL*4)));
-			 //ex i =   0b 0100 0100 0110 0000
-			 //  ~a =   0b 1111 1011 1111 1011 // 0 & x = 0
-			 // ans =   0b 0100 0000 0110 0000
+			 ////ex i =   0b 0100 0100 0110 0000
+			 ////  ~a =   0b 1111 1011 1111 1011 // 0 & x = 0
+			 //// ans =   0b 0100 0000 0110 0000
 		 }
 	 }
-	  	 //set CurrentL  L High//
+	  	 ////set CurrentL  L High//
 	 HAL_GPIO_WritePin(BtnMtxPortL[CurntL], BtnMtxPinL[CurntL], GPIO_PIN_SET);
 	 uint8_t nextL = (CurntL + 1) % 4; // % 4 prevent overflow
-	 // set next port Low, prepare to be read in next loop (open drain)
+	 //// set next port Low, prepare to be read in next loop (open drain)
 	 HAL_GPIO_WritePin(BtnMtxPortL[nextL], BtnMtxPinL[nextL], GPIO_PIN_RESET);
 	 CurntL = nextL;
 	}
 }
 
-//int DecoToNum()
-//{
-//	for(int j = 0;j < 14; j++){
-//		int8_t Chkrr =( BtnState >> j )&0x01;
-//
-//		if(Chkrr == 1){
-//			switch(j){
-//			case 0:
-//				return 7;
-//			case 1:
-//				return 8;
-//			case 2:
-//				return 9;
-//			case 4:
-//				return 4;
-//			case 5:
-//				return 5;
-//			case 6:
-//				return 6;
-//			case 8:
-//				return 1;
-//			case 9:
-//				return 2;
-//			case 10:
-//				return 3;
-//			case 13:
-//			default:
-//				return 0;
-//			}
-//		}
-//	}
-//}
-//
-//void CounterSet(){
-//	// counter circuit
-//	  static uint32_t timestp = 0;
-//	  //static uint32_t counter = 0;
-//	  if(HAL_GetTick() - timestp >= 1){ //every 1 m sec
-//		  timestp = HAL_GetTick(); // stamp time
-//		  if (counter >= 100){
-//			  counter = 0;
-//		  }
-//		  else{counter++;}
-//	  }
-//}
+int DecoToNum()
+{
+	for(int j = 0;j < 14; j++){
+		int8_t Chkrr =( BtnState >> j )&0x01;
 
+		if(Chkrr == 1){
+			switch(j){
+			case 0:
+				return 7;
+			case 1:
+				return 8;
+			case 2:
+				return 9;
+			case 4:
+				return 4;
+			case 5:
+				return 5;
+			case 6:
+				return 6;
+			case 8:
+				return 1;
+			case 9:
+				return 2;
+			case 10:
+				return 3;
+			case 13:
+			default:
+				return 0;
+			case 15:// ok-> send wrong digit
+				return 555;
+			}
+		}
+	}
+}
 
+void CounterSet()
+	{
+	// counter circuit
+	  static uint32_t timestp = 0;
+	  //static uint32_t counter = 0;
+	  if(HAL_GetTick() - timestp >= 1){ //every 1 m sec
+		  timestp = HAL_GetTick(); // stamp time
+		  if (counter >= PeriodOfCnter){
+			  counter = 0;
+		  }
+		  else{counter++;}
+	  }
+	}
+
+int ShiftTest(int x)
+{
+	return (BtnState >> x) & 0x01;
+} 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /* USER CODE END 4 */
 
 /**
