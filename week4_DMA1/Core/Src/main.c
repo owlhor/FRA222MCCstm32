@@ -42,6 +42,8 @@
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
+TIM_HandleTypeDef htim3;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -49,12 +51,14 @@ UART_HandleTypeDef huart2;
 uint32_t ADCData[4]={0}; // 8_t byte / 16_t half word / 32_t word
 static uint32_t timestp = 0;
 static uint32_t responTime = 0;
-static uint32_t Realtime = 0;
+static uint64_t Realtime = 0;
 static uint8_t STG = 0; // game state
 uint32_t randomTime = 0;
 uint8_t rise = 0; // fake rising edge
 uint8_t gameTrig = 0; // start func
 
+uint32_t millix = 5;
+uint64_t _microstamp = 0; // help microsc to stamp time from many overflowsss
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -63,11 +67,9 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
-
-void StTimeGame();
-
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
-
+uint64_t microsc(); // TIM3 as microsecond
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -106,9 +108,13 @@ int main(void)
   MX_USART2_UART_Init();
   MX_DMA_Init();
   MX_ADC1_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start_DMA(&hadc1, ADCData, 4); // array size
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET); // start on LED
+
+  HAL_TIM_Base_Start(&htim3);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -116,8 +122,9 @@ int main(void)
   while (1)
   {
 	  //HAL_Delay(100000000);
-	  Realtime = HAL_GetTick();
+	  Realtime = microsc(); //HAL_GetTick()
 	  if(gameTrig == 1){StTimeGame();}
+
 
     /* USER CODE END WHILE */
 
@@ -147,9 +154,9 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM = 16;
-  RCC_OscInitStruct.PLL.PLLN = 336;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 100;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
@@ -164,7 +171,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
   {
     Error_Handler();
   }
@@ -241,6 +248,51 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 9;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 9999;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
 
 }
 
@@ -341,9 +393,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 		//HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);//start game
 		randomTime = 1000 + (((22695477*ADCData[0])+ADCData[1]) % 10000); // get random from ADC DMA
-		timestp = HAL_GetTick(); // stamp time start random count
+		//timestp = HAL_GetTick(); // stamp time start random count
+		timestp = microsc();
 		STG = 1;
+		//StTimeGame();
 		gameTrig = 1;
+		millix++;
 	}
 	//if(gameTrig == 1){StTimeGame();}
 
@@ -370,22 +425,38 @@ void TimeGame(){
 
 void StTimeGame(){
 	rise =  HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
+	Realtime = microsc();
 	switch(STG){
 	case 1:
 		if (Realtime - timestp >= randomTime){
+		//if (microsc() - timestp >= randomTime){
 			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-			timestp = HAL_GetTick(); // startstamp response
+			//timestp = HAL_GetTick(); // startstamp response
+			timestp = microsc();
 			STG = 2;
 		}
 		break;
 	case 2:
 		if(rise == 1){
 			responTime = Realtime - timestp; // stamp response
+			//responTime = microsc() - timestp;
 			STG = 0;
 			gameTrig = 0;
 		}
 		break;
 	}
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	if(htim == &htim3){
+		_microstamp += 10000;
+		millix++;
+	}
+}
+
+uint64_t microsc() { // timer
+	return _microstamp + htim3.Instance->CNT;
 }
 /* USER CODE END 4 */
 
