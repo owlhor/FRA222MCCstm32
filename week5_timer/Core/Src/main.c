@@ -119,7 +119,7 @@ int main(void)
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
   //timer for micros()
-  HAL_TIM_Base_Start(&htim11);
+  HAL_TIM_Base_Start_IT(&htim11);
 
 
   /* USER CODE END 2 */
