@@ -387,22 +387,22 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  // parraregis driving act as DigitalOUT
-	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, SHLD);
+	  // parraregis driving act as DigitalOUT       // A0 as ser in
+	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, SHLD);  // D2
  80004e4:	4b1d      	ldr	r3, [pc, #116]	; (800055c <main+0x8c>)
  80004e6:	781b      	ldrb	r3, [r3, #0]
  80004e8:	461a      	mov	r2, r3
  80004ea:	f44f 6180 	mov.w	r1, #1024	; 0x400
  80004ee:	481c      	ldr	r0, [pc, #112]	; (8000560 <main+0x90>)
  80004f0:	f000 fe36 	bl	8001160 <HAL_GPIO_WritePin>
-	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, SERCLK);
+	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, SERCLK); // D3
  80004f4:	4b1b      	ldr	r3, [pc, #108]	; (8000564 <main+0x94>)
  80004f6:	781b      	ldrb	r3, [r3, #0]
  80004f8:	461a      	mov	r2, r3
  80004fa:	2108      	movs	r1, #8
  80004fc:	481a      	ldr	r0, [pc, #104]	; (8000568 <main+0x98>)
  80004fe:	f000 fe2f 	bl	8001160 <HAL_GPIO_WritePin>
-	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, INHCLK);
+	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, INHCLK); // D4
  8000502:	4b1a      	ldr	r3, [pc, #104]	; (800056c <main+0x9c>)
  8000504:	781b      	ldrb	r3, [r3, #0]
  8000506:	461a      	mov	r2, r3
@@ -415,13 +415,13 @@ int main(void)
  8000514:	4603      	mov	r3, r0
  8000516:	4a16      	ldr	r2, [pc, #88]	; (8000570 <main+0xa0>)
  8000518:	6013      	str	r3, [r2, #0]
-	  if(time-timeStampSR > 20)       // run every 1000us
+	  if(time-timeStampSR > 3)       // run every 1000us
  800051a:	4b15      	ldr	r3, [pc, #84]	; (8000570 <main+0xa0>)
  800051c:	681a      	ldr	r2, [r3, #0]
  800051e:	4b15      	ldr	r3, [pc, #84]	; (8000574 <main+0xa4>)
  8000520:	681b      	ldr	r3, [r3, #0]
  8000522:	1ad3      	subs	r3, r2, r3
- 8000524:	2b14      	cmp	r3, #20
+ 8000524:	2b03      	cmp	r3, #3
  8000526:	d9dd      	bls.n	80004e4 <main+0x14>
 	          {
 	              timeStampSR = time;           //set new time stamp
@@ -450,7 +450,7 @@ int main(void)
  8000550:	4611      	mov	r1, r2
  8000552:	4618      	mov	r0, r3
  8000554:	f000 f9f0 	bl	8000938 <GraytoBinario>
-	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, SHLD);
+	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, SHLD);  // D2
  8000558:	e7c4      	b.n	80004e4 <main+0x14>
  800055a:	bf00      	nop
  800055c:	2000003c 	.word	0x2000003c

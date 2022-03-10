@@ -109,13 +109,13 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  // parraregis driving act as DigitalOUT
-	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, SHLD);
-	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, SERCLK);
-	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, INHCLK);
+	  // parraregis driving act as DigitalOUT       // A0 as ser in
+	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, SHLD);  // D2
+	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, SERCLK); // D3
+	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, INHCLK); // D4
 
 	  time = HAL_GetTick();
-	  if(time-timeStampSR > 20)       // run every 1000us
+	  if(time-timeStampSR > 3)      // don't use 1
 	          {
 	              timeStampSR = time;           //set new time stamp
 	              ParraRegisDriveAbsENC(sevcode,encResbit);   // 166 x 595 Driver
