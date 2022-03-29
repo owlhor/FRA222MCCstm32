@@ -50,12 +50,26 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 
 uint8_t ADCUpdateFlag = 0;
-uint16_t ADCFeedback = 0;
+uint16_t ADCFeedback = 0; // A0
+uint16_t ADC_Target = 1200; //Analog value at 1 V
+
+typedef struct{
+	ADC_ChannelConfTypeDef Confix;
+	uint16_t datt;
+}ADCStruct;
+ADCStruct ADCFeedx[2] = {0}; // 0 A0, 1 A1
 
 uint16_t PWMOut = 3000; // dytycycle = x/10000 % ,TIM1
 
 uint64_t _micro = 0;
 uint64_t TimeOutputLoop = 0; // pwm frequency update, 2kHz
+
+// PID parameter
+int16_t Err[2] = {0}; // 0 is err, 1 is last err
+int16_t Integral = 0;
+float k_p = 0.1 ;
+float k_i = 0.001 ;
+float k_d = 0.1 ;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -68,6 +82,7 @@ static void MX_TIM3_Init(void);
 static void MX_TIM11_Init(void);
 /* USER CODE BEGIN PFP */
 uint64_t micros();
+void ADCConfigINIT();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -121,6 +136,7 @@ int main(void)
   //timer for micros()
   HAL_TIM_Base_Start_IT(&htim11);
 
+  //ADCConfigINIT();// multichannel ADC
 
   /* USER CODE END 2 */
 
@@ -132,17 +148,37 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
+	  //ADCReadUpdate();
+
 	  //2KHz loop use timer
 	  if(micros() - TimeOutputLoop > 500){
 		  TimeOutputLoop = micros(); // stamp
 		  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, PWMOut);
+		  //ADC_Target = ADCFeedx[1].datt;
 	  }
 	  // control PWM to get 1V=> 1023 ADu
 	  if(ADCUpdateFlag){
 		  // any task when update flag = 1
+		  // PID
+		  Err[0] = ADC_Target - ADCFeedback;
 
-		  ADCUpdateFlag = 0;
-	  }
+		  PWMOut = PWMOut + (k_p * Err [0]) + (k_i * Integral) + (k_d *(Err[1]-Err[0]) );
+
+		  // saturation
+		  if(PWMOut >= 10000){
+			  PWMOut = 10000;
+		  }
+		  else if(PWMOut <= 0){
+			  PWMOut = 0;
+		  }
+		  else{
+			  Integral += Err[0];
+		  }
+		  Err[1] = Err[0];
+
+		  ADCUpdateFlag = 0; //end task
+	  	 }
+
   }
   /* USER CODE END 3 */
 }
@@ -459,7 +495,38 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+/*
+void ADCConfigINIT(){
+	// init style at struct ADCStructure
+	// Config PA0
+	//ADCFeedx[0].Confix.Channel = ADC_CHANNEL_0;
+	//ADCFeedx[0].Confix.Rank = 1;
+	//ADCFeedx[0].Confix.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+	// Config PA1
+	ADCFeedx[1].Confix.Channel = ADC_CHANNEL_1;
+	ADCFeedx[1].Confix.Rank = 1;
+	ADCFeedx[1].Confix.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+	// Config Temp (internal)
+}
 
+void ADCReadUpdate()
+{
+	for(int i=1;i<2;i++){
+	// Setting channel
+	HAL_ADC_ConfigChannel(&hadc1, &ADCFeedx[i].Confix);
+	//start ADC sampling
+	HAL_ADC_Start(&hadc1);
+	//wait for sampling-> conversion , check if error timeout
+	if(HAL_ADC_PollForConversion(&hadc1, 10)==HAL_OK) //10mSec timeout
+	{
+		//ReadData to confix channel
+		ADCFeedx[i].datt = HAL_ADC_GetValue(&hadc1);
+	}
+	//stop ADC sampling
+	HAL_ADC_Stop(&hadc1);
+	}
+}
+*/
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) // feedback new ADC every 1K
 {
 	ADCFeedback = HAL_ADC_GetValue(&hadc1);
