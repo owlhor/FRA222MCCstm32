@@ -125,10 +125,10 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  //HAL_Delay(100000000);
+	  HAL_Delay(100000000);
 	  //Realtime = HAL_GetTick(); //microsc()
 	  //Realtii = microsc();
-	  if(gameTrig == 1){StTimeGame();}
+	  //if(gameTrig == 1){StTimeGame();}
 
 
     /* USER CODE END WHILE */
@@ -402,7 +402,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 		//timestp = HAL_GetTick(); // stamp time start random count
 		timestp = microsc();
 		STG = 1;
-		StTimeGame();
+		//StTimeGame();
 		gameTrig = 1;
 		/////////////////////////// StTime while parttt/////////////////////
 		/*deltatime = microsc() - timestp ;
@@ -454,6 +454,12 @@ void StTimeGame(){
 			timestp = microsc();
 			STG = 2;
 		}
+
+		if(rise == 1){ //release beforetime -> return 555 and end game
+					responTime = 5555555;
+					STG = 0;
+					gameTrig = 0;
+				}
 		break;
 	case 2:
 		if(rise == 1){
@@ -471,6 +477,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	if(htim == &htim3){
 		_microstamp += 65535;
 		millix++;
+		if(gameTrig == 1){StTimeGame();}
 	}
 }
 
