@@ -43,12 +43,15 @@
 
 /* Private variables ---------------------------------------------------------*/
 TIM_HandleTypeDef htim1;
-TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 uint64_t _micros = 0;
+
+uint16_t RawRead = 0;
+
 float DegRel = 0;
 float DegAbs = 0;
 float RadRel = 0;
@@ -61,10 +64,11 @@ float u_contr = 0;
 float PreviTime = 0; // find delta T
 float DeltaTime = 0;
 float CrrntTime = 0;
+uint8_t ErrPosx = 0;
 
-float K_P = 0.8;
-float K_I = 0.5;
-float K_D = 0.0;
+float K_P = 0.7;
+float K_I = 0.009;
+float K_D = 0;
 
 float Propo;
 float Integral;
@@ -77,6 +81,8 @@ uint8_t PWMCnter = 0;
 uint64_t PWMTimestamp = 0;
 uint8_t D5pin = 1,D6pin =  1; // out logic for driver
 uint8_t aspwm = 0;
+
+uint32_t timestamp = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -84,7 +90,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM1_Init(void);
-static void MX_TIM2_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 uint64_t micros();
 void UpdatePosition();
@@ -128,10 +134,10 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_TIM1_Init();
-  MX_TIM2_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
-  HAL_TIM_Base_Start_IT(&htim2);
+  HAL_TIM_Base_Start_IT(&htim3);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -141,10 +147,17 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
 	  UpdatePosition();
-	  PIDzero();
-	  MotDrv();
+
 	  PWMgen();
+	  PIDzero();
+
+	  if (micros()- timestamp >= 1000)
+	  {
+		  MotDrv();
+	  }
+
   }
   /* USER CODE END 3 */
 }
@@ -244,47 +257,47 @@ static void MX_TIM1_Init(void)
 }
 
 /**
-  * @brief TIM2 Initialization Function
+  * @brief TIM3 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_TIM2_Init(void)
+static void MX_TIM3_Init(void)
 {
 
-  /* USER CODE BEGIN TIM2_Init 0 */
+  /* USER CODE BEGIN TIM3_Init 0 */
 
-  /* USER CODE END TIM2_Init 0 */
+  /* USER CODE END TIM3_Init 0 */
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
 
-  /* USER CODE BEGIN TIM2_Init 1 */
+  /* USER CODE BEGIN TIM3_Init 1 */
 
-  /* USER CODE END TIM2_Init 1 */
-  htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 99;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 99;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 65535;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
   }
   sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
   {
     Error_Handler();
   }
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN TIM2_Init 2 */
+  /* USER CODE BEGIN TIM3_Init 2 */
 
-  /* USER CODE END TIM2_Init 2 */
+  /* USER CODE END TIM3_Init 2 */
 
 }
 
@@ -367,18 +380,18 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void UpdatePosition()
 {
-	static uint64_t TimestampCalcualtionLoop=0;
+	static uint64_t TimestampCalcualtionLoop = 0;
 	if(micros()-TimestampCalcualtionLoop >= 1000 )
 	{
-		uint16_t RawRead = TIM1->CNT;
+		RawRead = TIM1->CNT;
 		// 64*12*4 = 3072 rising edge = 1 round
 		// use .0 in float math operation
 		// degree
 		DegRel = (RawRead/3072.0)*360.0;
 		DegAbs = ((RawRead % 3072)/3072.0)*360.0; // mod 3072 out
 		//radiant
-		RadRel = (RawRead/3072.0)*(2*M_PI);
-		RadAbs = ((RawRead % 3072)/3072.0)*(2*M_PI);
+		//RadRel = (RawRead/3072.0)*(2*M_PI);
+		//RadAbs = ((RawRead % 3072)/3072.0)*(2*M_PI);
 	}
 
 
@@ -399,7 +412,7 @@ void PIDzero(){
 
 	Derivate = (ErrPos[0]-ErrPos[1]) / DeltaTime; // d/dt position
 
-	u_contr = Propo ; // PID u[k] + (K_I * Integral) + (K_D * Derivate)
+	u_contr = Propo + (K_I * Integral) ; // PID u[k] + (K_D * Derivate)
 
 	ErrPos[1] = ErrPos[0]; // log previous error
 }
@@ -409,15 +422,19 @@ void MotDrv(){
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, D5pin);
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10, D6pin);
 	//   direction chk
+
 	if(u_contr < 0){MotCW = -1;}
 	else if (u_contr > 0) {MotCW = 1;}
 	else{MotCW = 0;}
 
+	//if( -1 < ErrPos[0] && ErrPos[0] < 1){MotCW = 0;}
+
 	// speed
 	PWMotDrv = (int)fabsf(u_contr); // Absolute int
-	if(PWMotDrv > 10){PWMotDrv = 10;}
-	if(PWMotDrv < 2 && ErrPos[0] != 0 ){PWMotDrv = 2;} //pvnt too low pwm that can't drive mot
+	if(PWMotDrv > 40){PWMotDrv = 40;}
+	if(PWMotDrv < 2 && ErrPos[0] >= 1){PWMotDrv = 2;} //pvnt too low pwm that can't drive mot
 
+//
 	// driver
 	if (MotCW == -1){
 		D5pin = aspwm;
@@ -452,14 +469,15 @@ void PWMgen(){
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	if (htim == &htim2)
+	if (htim == &htim3)
 	{
-		_micros += 4294967295;//stamp for timer2 is 2^32
+		//_micros += 4294967295;//stamp for timer2 is 2^32
+		_micros += 65535;
 	}
 }
 uint64_t micros()
 {
-	return _micros + htim2.Instance->CNT;
+	return _micros + htim3.Instance->CNT;
 }
 /* USER CODE END 4 */
 
