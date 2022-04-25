@@ -41,19 +41,19 @@
 
 /* Private variables ---------------------------------------------------------*/
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim11;
 DMA_HandleTypeDef hdma_tim2_ch1;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-//uint8_t cno = 0b0,cnock = 0b0,enbounce = 0;    //input code for check
 
-uint8_t SHLD, SERCLK, INHCLK, LATCHER, SERIN;    // for parraregis drive
+uint8_t SHLD, SERCLK, INHCLK, SERIN;    // clk for parraregis drive
 uint8_t encResbit = 10;
  //     continuous shift /finished shift/ binary position
 uint16_t EnBitlog = 0b0, GrayCBit = 0b0, BinPos = 0b0;
-// debug
+// ParraRegis Shifter
 uint32_t timeStampSR =0;
 static enum {INIT,SHLDER,SFTER,RESFTER,LATCHING} PRState = INIT;
 uint32_t time;
@@ -75,6 +75,9 @@ float RoundNum = 0; // num of pulse in 1 min
 //uint8_t fedge[2] = {0}; // RiseFall edge detection
 //uint16_t pulseCnt = 0;
 
+//PWM test
+uint16_t PWMOut = 3000; // dytycycle = x/10000 % ,TIM4 PB6
+uint32_t TimeLoopPWM = 0;
 uint64_t _micros = 0;
 /* USER CODE END PV */
 
@@ -85,6 +88,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_DMA_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM11_Init(void);
+static void MX_TIM4_Init(void);
 /* USER CODE BEGIN PFP */
 void ParraRegisDriveAbsENC(uint8_t encbit);    //
 void GraytoBinario(uint16_t grayx,uint8_t numbit);
@@ -130,11 +134,17 @@ int main(void)
   MX_DMA_Init();
   MX_TIM2_Init();
   MX_TIM11_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim11);
   HAL_TIM_Base_Start(&htim2);
   HAL_TIM_IC_Start_DMA(&htim2, TIM_CHANNEL_1, (uint32_t*) &capturedata,
   			CAPTURENUM);
+
+  //PWM Test
+  HAL_TIM_Base_Start(&htim4);
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -148,9 +158,12 @@ int main(void)
 	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, SHLD);  // D2
 	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, SERCLK); // D3
 	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, INHCLK); // D4
+	  // escape to PC5 PC6 PC8 from tomer crash
 
-	  time = HAL_GetTick();
-	  if(time-timeStampSR > 3)      // don't use 1
+	  //time = HAL_GetTick();
+	  time = micros();
+	  //if(time-timeStampSR > 3)      // don't use 1
+	  if(time-timeStampSR > 2000)      // don't use 1
 	          {
 	              timeStampSR = time;           //set new time stamp
 	              ParraRegisDriveAbsENC(encResbit);   // 166 x 595 Driver
@@ -160,6 +173,13 @@ int main(void)
 
 	  encoderSpeedReaderCycle();
 	  SpeedShaft();
+
+	  // 2KHz change PWM PB6
+	  if(micros() - TimeLoopPWM > 500){
+	  		  TimeLoopPWM = micros(); // stamp
+	  		  __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, PWMOut);
+	  		  //ADC_Target = ADCFeedx[1].datt;
+	  	  }
 	  /*
 	  // foolish edge detect Counter
 	  fedge[0] = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_7); // D9
@@ -275,6 +295,65 @@ static void MX_TIM2_Init(void)
   /* USER CODE BEGIN TIM2_Init 2 */
 
   /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
+  * @brief TIM4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM4_Init(void)
+{
+
+  /* USER CODE BEGIN TIM4_Init 0 */
+
+  /* USER CODE END TIM4_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM4_Init 1 */
+
+  /* USER CODE END TIM4_Init 1 */
+  htim4.Instance = TIM4;
+  htim4.Init.Prescaler = 0;
+  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim4.Init.Period = 9999;
+  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim4, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM4_Init 2 */
+
+  /* USER CODE END TIM4_Init 2 */
+  HAL_TIM_MspPostInit(&htim4);
 
 }
 
@@ -424,7 +503,7 @@ void ParraRegisDriveAbsENC(uint8_t encbit){   // sn74hc166x595 drive
         SHLD = 1; //bar disable
         SERCLK = 0;
         INHCLK = 0;
-        LATCHER = 0;
+        //LATCHER = 0;
 
         SegDigit = 0;
         EnBitlog = 0b0;
@@ -435,7 +514,7 @@ void ParraRegisDriveAbsENC(uint8_t encbit){   // sn74hc166x595 drive
         SHLD = 0;     // trig parallel get 1 times
         SERCLK = 0;
         INHCLK = 1;   // use inhibit clk to trig / no distrub ser clk
-        LATCHER = 0;
+        //LATCHER = 0;
 
         PRState = SFTER;
         break;
@@ -444,7 +523,7 @@ void ParraRegisDriveAbsENC(uint8_t encbit){   // sn74hc166x595 drive
         SHLD = 1;
         INHCLK = 0;
         SERCLK = 1;
-        LATCHER = 0;
+        //LATCHER = 0;
         // load data
         SERIN = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1);
         //EnBitlog = (EnBitlog << 1)+ SERIN; // shift first bit 2 left
@@ -463,16 +542,16 @@ void ParraRegisDriveAbsENC(uint8_t encbit){   // sn74hc166x595 drive
         SHLD = 1;
         SERCLK = 0; // down clock
         INHCLK = 0;
-        LATCHER = 0;
+        //LATCHER = 0;
 
         PRState = SFTER;
         break;
 
-        case LATCHING:  // latch for 595
+        case LATCHING:  // confirm data
         SHLD = 1;
         SERCLK = 0; // down clock
         INHCLK = 0;
-        LATCHER = 1;
+        //LATCHER = 1;
 
         // send complete gray
         // >>1 to cut the first duplicate bit(How tf it comes ?)
