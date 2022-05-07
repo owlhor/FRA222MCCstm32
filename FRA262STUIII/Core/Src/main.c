@@ -48,6 +48,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define CAPTURENUM 16 // sample data array size for velo
+#define ADDR_EFFT 0x23 // End Effector Addr 0x23 0010 0011
+#define ADDR_IOXT 0b01000000 // datasheet p15
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -56,30 +59,37 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim11;
+DMA_HandleTypeDef hdma_tim2_ch1;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-////////////////Abs Encoder//////////////////////////////////
+////////////////Abs Encoder State Machine//////////////////////////////////
 uint8_t SHLD, SERCLK, INHCLK, SERIN;    // clk for parraregis drive
-uint8_t encResbit = 10;
+
  //     continuous shift /finished shift/ binary position
 uint16_t EnBitlog = 0b0, GrayCBit = 0b0, BinPos = 0b0;
 // ParraRegis Shifter
-uint32_t timeStampSR =0;
 static enum {INIT,SHLDER,SFTER,RESFTER,LATCHING} PRState = INIT;
-uint32_t time;
-uint64_t timestampve;
 static uint8_t SegDigit = 0;
-/////////////////////////////////////////////////////////////
-// velo dma input capture
+
+//////////////Abs Encoder 10 bit I2C
+uint8_t encResbit = 10;
+uint32_t timeStampSR =0;
+uint8_t RawEnBitA = 0b0, RawEnBitB = 0b0;
+uint16_t GrayCBitx = 0b0, GrayCBitXI = 0b0, BinPosx = 0b0, BinPosXI = 0b0;
+static uint8_t flag_absenc = 0;
+////////////// velo dma input capture////////////////////
 //DMA Buffer
 uint32_t capturedata[CAPTURENUM] = { 0 };
 //diff time of capture data
 int64_t DiffTime[CAPTURENUM-1] = { 0 };
+uint64_t timestampve;
 //Mean difftime
 float MeanTime =0;
 float RoundNum = 0; // num of pulse in 1 min
@@ -89,6 +99,16 @@ float RoundNum = 0; // num of pulse in 1 min
 uint16_t PWMOut = 3000; // dytycycle = x/10000 % ,TIM4 PB6
 uint32_t TimeLoopPWM = 0;
 uint64_t _micros = 0;
+
+////////////End Effector////////////////////////////////////
+// ADDR 0x23 ACK Register 0x45 : Laser On
+// ADDR 0x23 ACK Register 0x23 : Laser data read request
+// ADDR 0x23 ACK Register ____ : Laser read (request before every read)
+
+// Regis 0x12 : Start (1sec)
+// Regis 0x34 : Work (31sec)
+// Regis 0x56 : Stop (1sec)
+// Regis 0x78 : wait new (- sec)
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -98,10 +118,15 @@ static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_TIM11_Init(void);
+static void MX_DMA_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 void ParraRegisDriveAbsENC(uint8_t encbit);    //
-void GraytoBinario(uint16_t grayx,uint8_t numbit);
+uint16_t GraytoBinario(uint16_t grayx,uint8_t numbit);
 void encoderSpeedReaderCycle();
+
+void IOExpenderInit();
+void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB);
 uint64_t micros();
 /* USER CODE END PFP */
 
@@ -142,6 +167,8 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM4_Init();
   MX_TIM11_Init();
+  MX_DMA_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   	HAL_TIM_Base_Start_IT(&htim11); // micro timer
     HAL_TIM_Base_Start(&htim2); // Speed
@@ -151,6 +178,10 @@ int main(void)
     //PWM Test
     HAL_TIM_Base_Start(&htim4);
     HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+
+    //MCP23017 setting init
+    HAL_Delay(100);
+    IOExpenderInit();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -162,21 +193,15 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
 	  // parraregis driving act as DigitalOUT       // A0 as ser in
-	  	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, SHLD);  //
-	  	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, SERCLK); //
-	  	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, INHCLK); //
 
 
-	  	  time = micros();
-	  	  //if(time-timeStampSR > 3)      // don't use 1
-	  	  if(time-timeStampSR > 2000)      // don't use 1
+	  	  if (micros()-timeStampSR > 3000)      // don't use 1
 	  	          {
-	  	              timeStampSR = time;           //set new time stamp
-	  	              ParraRegisDriveAbsENC(encResbit);   // 166 x 595 Driver
-	  	              if(PRState == LATCHING){
-	  	            	  GraytoBinario(GrayCBit, encResbit);}
+	  	              timeStampSR = micros();           //set new time stamp
+	  	              flag_absenc = 1;
 	  	          }
 
+	  	  AbsEncI2CRead(&RawEnBitA,&RawEnBitB);
 	  	  encoderSpeedReaderCycle();
 
 	  	  ///////////////////// 2KHz change PWM PB6////////////////////
@@ -234,6 +259,40 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 400000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
   * @brief TIM2 Initialization Function
   * @param None
   * @retval None
@@ -247,6 +306,7 @@ static void MX_TIM2_Init(void)
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_IC_InitTypeDef sConfigIC = {0};
 
   /* USER CODE BEGIN TIM2_Init 1 */
 
@@ -266,9 +326,21 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
+  if (HAL_TIM_IC_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
+  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
+  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
+  sConfigIC.ICFilter = 0;
+  if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -402,6 +474,22 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -447,6 +535,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : EXTI10_Emer_Pin */
+  GPIO_InitStruct.Pin = EXTI10_Emer_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(EXTI10_Emer_GPIO_Port, &GPIO_InitStruct);
 
 }
 
@@ -520,10 +614,9 @@ void ParraRegisDriveAbsENC(uint8_t encbit){
         }//end switch
     }//end void prll
 
-void GraytoBinario(uint16_t grayx,uint8_t numbit){ // numbit=10
-//int qd;
-//uint16_t gray = 0b0110110100;// gc 01 1011 0100 = 0b 01 0010 0111
-uint16_t binaryout = 0b0;
+uint16_t GraytoBinario(uint16_t grayx,uint8_t numbit){ // numbit=10
+
+	uint16_t binaryout = 0b0;
 
     binaryout = (grayx >> (numbit-1))&0x01;
     //std::cout << binaryout << std::endl;
@@ -539,8 +632,8 @@ uint16_t binaryout = 0b0;
             {binaryout = (binaryout << 1) + 1; } //qd = 1;
         //std::cout << "cp" << i << " " << cp1 << cp2 << " " << qd << "  "<<binaryout << std::endl;
     }
-    BinPos = binaryout;
-    //return binaryout;
+    //BinPos = binaryout;
+    return binaryout;
 }
 
 void encoderSpeedReaderCycle() {
@@ -565,8 +658,60 @@ void encoderSpeedReaderCycle() {
 	RoundNum = (60000000.0 / MeanTime)/1024.0; // round per min detect by 1024 clk
 
 }
-/////////////////////////////////////////////////////////////////////////////////////
+/////////////////////Abs Encoder I2C////////////////////////////////////////////
+void IOExpenderInit() {// call when start system
+	//Init All// setting from datasheet p17 table 3.5
+	static uint8_t Setting[0x16] = {
+			0b11111111, // IODIRA 1 = in/2=0ut
+			0b11111111, // IODIRB
+			0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, // GPPUA
+			0x00, // GPPUB
+			0x00, 0x00, 0x00, 0x00,
+			0x00, // 0x12 GPIOA
+			0x00, // 0x13 GPIOB
+			0x00, 0x00 };
+	// OLATB -> Out data for pinB
+	HAL_I2C_Mem_Write(&hi2c1, ADDR_IOXT, 0x00, I2C_MEMADD_SIZE_8BIT, Setting,
+			0x16, 100);
+}
 
+void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB){
+
+	if(flag_absenc != 0 && hi2c1.State == HAL_I2C_STATE_READY){
+		//static uint8_t absencStep = 0;
+		switch(flag_absenc){
+		default:
+			break;
+
+		case 1:
+			//HAL_I2C_Master_Receive(&hi2c1, ADDR_IOXT, GrayCBitx, 1, 100);
+			HAL_I2C_Mem_Read(&hi2c1, ADDR_IOXT, 0x12, I2C_MEMADD_SIZE_8BIT,
+						RawRA, 1, 100);
+			flag_absenc = 2;
+		break;
+
+		case 2:
+			HAL_I2C_Mem_Read(&hi2c1, ADDR_IOXT, 0x13, I2C_MEMADD_SIZE_8BIT,
+								RawRB, 1, 100);
+			flag_absenc = 3;
+		break;
+
+		case 3:
+			GrayCBitx = (RawEnBitB << 8) + RawEnBitA;
+			GrayCBitXI = ~GrayCBitx - 0b1111110000000000; // invert and clear 6 high
+			//BinPosx = GraytoBinario(GrayCBitx, 10);
+			BinPosXI = GraytoBinario(GrayCBitXI, 10);
+			flag_absenc = 0;
+		break;
+		}
+
+
+
+
+	}
+}
 ///////////////////////////////////// micro timer////////////////////////////////////
 uint64_t micros()
 {return _micros + htim11.Instance->CNT;}
