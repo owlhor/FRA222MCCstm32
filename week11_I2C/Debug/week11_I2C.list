@@ -37,11 +37,11 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   CONTENTS, READONLY, DEBUGGING, OCTETS
  16 .debug_macro  00014fb9  00000000  00000000  0002e768  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .debug_line   0000c13f  00000000  00000000  00043721  2**0
+ 17 .debug_line   0000c13d  00000000  00000000  00043721  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 18 .debug_str    000843a9  00000000  00000000  0004f860  2**0
+ 18 .debug_str    000843a9  00000000  00000000  0004f85e  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .comment      00000053  00000000  00000000  000d3c09  2**0
+ 19 .comment      00000053  00000000  00000000  000d3c07  2**0
                   CONTENTS, READONLY
  20 .debug_frame  00002828  00000000  00000000  000d3c5c  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
@@ -1095,10 +1095,10 @@ void mystpfunc(uint8_t *RrWrdata){
  800093e:	781b      	ldrb	r3, [r3, #0]
  8000940:	2b00      	cmp	r3, #0
  8000942:	d031      	beq.n	80009a8 <mystpfunc+0x74>
-		//eeprxWrFlag = 1;
-
-		//eeprRdFlag = 1;
-		//ioxtWrFlag = 1;
+		// set flag up read btn and write led
+		// start read rom to logger first
+		// btn pressed -> read btn -> write rom
+		// do in while gettick -> read rom -> write led
 
 		switch (myfuncstate){
  8000944:	4b1e      	ldr	r3, [pc, #120]	; (80009c0 <mystpfunc+0x8c>)
@@ -1130,6 +1130,7 @@ void mystpfunc(uint8_t *RrWrdata){
  800096c:	4815      	ldr	r0, [pc, #84]	; (80009c4 <mystpfunc+0x90>)
  800096e:	f001 f813 	bl	8001998 <HAL_I2C_Mem_Read_IT>
 							RrWrdata, 1);
+				//HAL_I2C_Master_Receive_IT(&hi2c1, ADDR_IOXT, RrWrdata, 1);
 				myfuncstate = 2;
  8000972:	4b13      	ldr	r3, [pc, #76]	; (80009c0 <mystpfunc+0x8c>)
  8000974:	2202      	movs	r2, #2
@@ -1157,6 +1158,7 @@ void mystpfunc(uint8_t *RrWrdata){
  8000994:	480b      	ldr	r0, [pc, #44]	; (80009c4 <mystpfunc+0x90>)
  8000996:	f000 ff4d 	bl	8001834 <HAL_I2C_Mem_Write_IT>
 							RrWrdata, 1);
+					//HAL_I2C_Master_Seq_Receive_IT(&hi2c1, ADDR_EEPROM, RrWrdata, 1, unn);
 					myfuncstate = 0;
  800099a:	4b09      	ldr	r3, [pc, #36]	; (80009c0 <mystpfunc+0x8c>)
  800099c:	2200      	movs	r2, #0

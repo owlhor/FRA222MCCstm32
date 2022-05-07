@@ -501,12 +501,12 @@ int main(void)
  80005fa:	230a      	movs	r3, #10
  80005fc:	4898      	ldr	r0, [pc, #608]	; (8000860 <main+0x2d8>)
  80005fe:	f001 fc72 	bl	8001ee6 <HAL_UART_Transmit>
-	  /*Method 1 Polling Mode*/
-
 	  //		UARTRecieveAndResponsePolling();
 
 	  		/*Method 2 Interrupt Mode  print every 32 byte*/
-	  		HAL_UART_Receive_IT(&huart2,  (uint8_t*)RxDataBuffer, 32); // IT, no timeout
+
+	  // IT, no timeout// recieved from console
+	  		HAL_UART_Receive_IT(&huart2,  (uint8_t*)RxDataBuffer, 32);
  8000602:	2220      	movs	r2, #32
  8000604:	4998      	ldr	r1, [pc, #608]	; (8000868 <main+0x2e0>)
  8000606:	4896      	ldr	r0, [pc, #600]	; (8000860 <main+0x2d8>)

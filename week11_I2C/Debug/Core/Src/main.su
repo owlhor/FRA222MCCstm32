@@ -10,5 +10,5 @@ main.c:335:6:IOExpenderInit	24	static
 main.c:344:6:IOExpenderReadPinA	24	static
 main.c:351:6:IOExpenderWritePinB	24	static
 main.c:361:6:mystpfunc	24	static
-main.c:400:6:HAL_GPIO_EXTI_Callback	16	static
-main.c:412:6:Error_Handler	4	static,ignoring_inline_asm
+main.c:397:6:HAL_GPIO_EXTI_Callback	16	static
+main.c:409:6:Error_Handler	4	static,ignoring_inline_asm
