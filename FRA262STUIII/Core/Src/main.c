@@ -505,7 +505,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, LD2_Pin|Mot_dir_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, En_SHLD_Pin|En_SERCLK_Pin|En_INHCLK_Pin, GPIO_PIN_RESET);
@@ -516,18 +516,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LD2_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin;
+  /*Configure GPIO pins : LD2_Pin Mot_dir_Pin */
+  GPIO_InitStruct.Pin = LD2_Pin|Mot_dir_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : En_SERIN_Pin */
-  GPIO_InitStruct.Pin = En_SERIN_Pin;
+  /*Configure GPIO pin : Pwr_Sense_Pin */
+  GPIO_InitStruct.Pin = Pwr_Sense_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(En_SERIN_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(Pwr_Sense_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : En_SHLD_Pin En_SERCLK_Pin En_INHCLK_Pin */
   GPIO_InitStruct.Pin = En_SHLD_Pin|En_SERCLK_Pin|En_INHCLK_Pin;
@@ -637,6 +637,17 @@ uint16_t GraytoBinario(uint16_t grayx,uint8_t numbit){ // numbit=10
 }
 
 void encoderSpeedReaderCycle() {
+	//
+	//
+	//
+	//
+	// re code using position dif time
+	//
+	//
+	//
+	//
+	//
+	//
 	//get DMA Position form number of data
 	uint32_t CapPos =CAPTURENUM -  __HAL_DMA_GET_COUNTER(htim2.hdma[TIM_DMA_ID_CC1]);
 	uint32_t sum = 0 ;
@@ -667,7 +678,7 @@ void IOExpenderInit() {// call when start system
 			0x00, 0x00, 0x00, 0x00, 0x00,
 			0x00, 0x00, 0x00, 0x00, 0x00,
 			0x00, // GPPUA
-			0x00, // GPPUB
+			0b00111111, // GPPUB Pull up 100k R
 			0x00, 0x00, 0x00, 0x00,
 			0x00, // 0x12 GPIOA
 			0x00, // 0x13 GPIOB
@@ -687,6 +698,7 @@ void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB){
 
 		case 1:
 			//HAL_I2C_Master_Receive(&hi2c1, ADDR_IOXT, GrayCBitx, 1, 100);
+			//HAL_I2C_Master_Seq_Receive_DMA(hi2c, DevAddress, pData, Size, XferOptions);
 			HAL_I2C_Mem_Read(&hi2c1, ADDR_IOXT, 0x12, I2C_MEMADD_SIZE_8BIT,
 						RawRA, 1, 100);
 			flag_absenc = 2;
@@ -699,8 +711,9 @@ void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB){
 		break;
 
 		case 3:
-			GrayCBitx = (RawEnBitB << 8) + RawEnBitA;
-			GrayCBitXI = ~GrayCBitx - 0b1111110000000000; // invert and clear 6 high
+			GrayCBitx = (RawEnBitB << 8) | RawEnBitA;
+			//GrayCBitXI = ~GrayCBitx - 0b1111110000000000; // invert and clear 6 high
+			GrayCBitXI = ~GrayCBitx & 0b0000001111111111;
 			//BinPosx = GraytoBinario(GrayCBitx, 10);
 			BinPosXI = GraytoBinario(GrayCBitXI, 10);
 			flag_absenc = 0;
