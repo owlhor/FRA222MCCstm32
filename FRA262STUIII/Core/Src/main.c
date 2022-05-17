@@ -59,7 +59,7 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-I2C_HandleTypeDef hi2c1;
+ I2C_HandleTypeDef hi2c1;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim4;
@@ -69,6 +69,13 @@ DMA_HandleTypeDef hdma_tim2_ch1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+///////////////////////////////////////////////////////////////////////////
+/////////////////Grand State///////////////////////////////////////////////
+static enum {Ready, work, stop, emer, setZero} grandState = Ready;
+uint8_t pwr_sense = 0;
+uint64_t _micros = 0;
+
+uint8_t counter_e = 0;
 ////////////////Abs Encoder State Machine//////////////////////////////////
 uint8_t SHLD, SERCLK, INHCLK, SERIN;    // clk for parraregis drive
 
@@ -98,7 +105,8 @@ float RoundNum = 0; // num of pulse in 1 min
 ////////////PWM test/////////////////////////////////////////
 uint16_t PWMOut = 3000; // dytycycle = x/10000 % ,TIM4 PB6
 uint32_t TimeLoopPWM = 0;
-uint64_t _micros = 0;
+uint8_t mot_dirctn = 0;
+
 
 ////////////End Effector////////////////////////////////////
 // ADDR 0x23 ACK Register 0x45 : Laser On
@@ -199,10 +207,12 @@ int main(void)
 	  	          {
 	  	              timeStampSR = micros();           //set new time stamp
 	  	              flag_absenc = 1;
+
 	  	          }
 
 	  	  AbsEncI2CRead(&RawEnBitA,&RawEnBitB);
 	  	  encoderSpeedReaderCycle();
+	  	  pwr_sense = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1);
 
 	  	  ///////////////////// 2KHz change PWM PB6////////////////////
 	  	  if(micros() - TimeLoopPWM > 500){
@@ -227,6 +237,7 @@ void SystemClock_Config(void)
   */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
@@ -243,6 +254,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+
   /** Initializes the CPU, AHB and APB buses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
@@ -505,10 +517,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, LD2_Pin|Mot_dir_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, En_SHLD_Pin|En_SERCLK_Pin|En_INHCLK_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, Mot_dir_Pin|En_SHLD_Pin|En_SERCLK_Pin|En_INHCLK_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -516,12 +528,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LD2_Pin Mot_dir_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin|Mot_dir_Pin;
+  /*Configure GPIO pin : LD2_Pin */
+  GPIO_InitStruct.Pin = LD2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : Pwr_Sense_Pin */
   GPIO_InitStruct.Pin = Pwr_Sense_Pin;
@@ -529,18 +541,28 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(Pwr_Sense_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : En_SHLD_Pin En_SERCLK_Pin En_INHCLK_Pin */
-  GPIO_InitStruct.Pin = En_SHLD_Pin|En_SERCLK_Pin|En_INHCLK_Pin;
+  /*Configure GPIO pins : Mot_dir_Pin En_SHLD_Pin En_SERCLK_Pin En_INHCLK_Pin */
+  GPIO_InitStruct.Pin = Mot_dir_Pin|En_SHLD_Pin|En_SERCLK_Pin|En_INHCLK_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : D9_VeloDt_Pin */
+  GPIO_InitStruct.Pin = D9_VeloDt_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(D9_VeloDt_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : EXTI10_Emer_Pin */
   GPIO_InitStruct.Pin = EXTI10_Emer_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(EXTI10_Emer_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 
@@ -719,10 +741,14 @@ void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB){
 			flag_absenc = 0;
 		break;
 		}
-
-
-
-
+	}
+}
+/////////////// Emer Interrupt /////////////////////////////////
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+	if(GPIO_Pin == GPIO_PIN_10){
+		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+		counter_e++;
+		// Motor Driver Torque Lock here
 	}
 }
 ///////////////////////////////////// micro timer////////////////////////////////////
@@ -766,4 +792,3 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
-

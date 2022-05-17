@@ -1,6 +1,6 @@
 ################################################################################
 # Automatically-generated file. Do not edit!
-# Toolchain: GNU Tools for STM32 (9-2020-q2-update)
+# Toolchain: GNU Tools for STM32 (10.3-2021.10)
 ################################################################################
 
 -include ../makefile.init
@@ -58,14 +58,14 @@ BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ART
 EXECUTABLES += \
 FRA262STUIII.elf \
 
+MAP_FILES += \
+FRA262STUIII.map \
+
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
 FRA262STUIII.list \
-
-OBJCOPY_BIN += \
-FRA262STUIII.bin \
 
 
 # All Target
@@ -75,7 +75,7 @@ all: main-build
 main-build: FRA262STUIII.elf secondary-outputs
 
 # Tool invocations
-FRA262STUIII.elf: $(OBJS) $(USER_OBJS) D:\github_desktop\FRA222MCCstm32\FRA262STUIII\STM32F411RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+FRA262STUIII.elf FRA262STUIII.map: $(OBJS) $(USER_OBJS) D:\github_desktop\FRA222MCCstm32\FRA262STUIII\STM32F411RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	arm-none-eabi-g++ -o "FRA262STUIII.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"D:\github_desktop\FRA222MCCstm32\FRA262STUIII\STM32F411RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="FRA262STUIII.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
@@ -90,17 +90,12 @@ FRA262STUIII.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-FRA262STUIII.bin: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objcopy  -O binary $(EXECUTABLES) "FRA262STUIII.bin"
-	@echo 'Finished building: $@'
-	@echo ' '
-
 # Other Targets
 clean:
-	-$(RM) FRA262STUIII.bin FRA262STUIII.elf FRA262STUIII.list default.size.stdout
+	-$(RM) FRA262STUIII.elf FRA262STUIII.list FRA262STUIII.map default.size.stdout
 	-@echo ' '
 
-secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST) $(OBJCOPY_BIN)
+secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)
 
 fail-specified-linker-script-missing:
 	@echo 'Error: Cannot find the specified linker script. Check the linker settings in the build configuration.'
