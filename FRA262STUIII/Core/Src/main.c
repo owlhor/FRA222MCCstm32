@@ -38,7 +38,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#define _USER_MATH_DEFINES
+#include "math.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,6 +50,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define CAPTURENUM 16 // sample data array size for velo
+#define POSOFFSET  0 // angle zero offset abs enc
 #define ADDR_EFFT 0x23 // End Effector Addr 0x23 0010 0011
 #define ADDR_IOXT 0b01000000 // datasheet p15
 /* USER CODE END PD */
@@ -71,21 +73,15 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 ///////////////////////////////////////////////////////////////////////////
 /////////////////Grand State///////////////////////////////////////////////
-static enum {Ready, work, stop, emer, setZero} grandState = Ready;
+static enum {Ready, work, stop, emer , stopnd} grandState = Ready;
 uint8_t pwr_sense = 0;
+uint8_t stop_sense = 0;
+uint32_t TimeStampGrand = 0;
 uint64_t _micros = 0;
 
 uint8_t counter_e = 0;
-////////////////Abs Encoder State Machine//////////////////////////////////
-uint8_t SHLD, SERCLK, INHCLK, SERIN;    // clk for parraregis drive
 
- //     continuous shift /finished shift/ binary position
-uint16_t EnBitlog = 0b0, GrayCBit = 0b0, BinPos = 0b0;
-// ParraRegis Shifter
-static enum {INIT,SHLDER,SFTER,RESFTER,LATCHING} PRState = INIT;
-static uint8_t SegDigit = 0;
-
-//////////////Abs Encoder 10 bit I2C
+//////////////Abs Encoder 10 bit I2C /////////////////////////////
 uint8_t encResbit = 10;
 uint32_t timeStampSR =0;
 uint8_t RawEnBitA = 0b0, RawEnBitB = 0b0;
@@ -96,17 +92,40 @@ static uint8_t flag_absenc = 0;
 uint32_t capturedata[CAPTURENUM] = { 0 };
 //diff time of capture data
 int64_t DiffTime[CAPTURENUM-1] = { 0 };
-uint64_t timestampve;
+
 //Mean difftime
 float MeanTime =0;
 float RoundNum = 0; // num of pulse in 1 min
 
-
-////////////PWM test/////////////////////////////////////////
-uint16_t PWMOut = 3000; // dytycycle = x/10000 % ,TIM4 PB6
-uint32_t TimeLoopPWM = 0;
+uint16_t posSpeedlog[3] = {0};
+float speedsmoothlog[CAPTURENUM] = {0};
+float deltaar = 0;
+float RoundNumnd = 0;
+float RoundNumnd_sm = 0;
+uint64_t timestampve = 0;
+////////////PWM & Motor Driver/////////////////////////////////////////
+uint16_t PWMOut = 5000; // dytycycle = x/10000 % ,TIM4 PB6
+uint32_t timestampPWM = 0;
 uint8_t mot_dirctn = 0;
 
+///////// PID cat cat /////////////////////////////////////////////
+uint8_t bluecounter = 0;
+
+float TargetDeg = 0; // target degree pid
+float ErrPos[2] = {0};  // error
+float u_contr = 0;
+float PreviTime = 0; // find delta T
+float DeltaTime = 0;
+float CrrntTime = 0;
+uint8_t ErrPosx = 0;
+
+float K_P = 36;
+float K_I = 0.038;
+float K_D = 0;
+
+float Propo;
+float Integral;
+float Derivate;
 
 ////////////End Effector////////////////////////////////////
 // ADDR 0x23 ACK Register 0x45 : Laser On
@@ -123,19 +142,23 @@ uint8_t mot_dirctn = 0;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_TIM2_Init(void);
-static void MX_TIM4_Init(void);
-static void MX_TIM11_Init(void);
 static void MX_DMA_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM11_Init(void);
+static void MX_TIM2_Init(void);
+static void MX_TIM4_Init(void);
 /* USER CODE BEGIN PFP */
-void ParraRegisDriveAbsENC(uint8_t encbit);    //
+void IOExpenderInit();
 uint16_t GraytoBinario(uint16_t grayx,uint8_t numbit);
+void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB);
 void encoderSpeedReaderCycle();
 
-void IOExpenderInit();
-void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB);
+void GrandStatumix();
+void Speedsmoothfunc(float inpdat);
+void PIDzero();
+void MotDrvCytron();
 uint64_t micros();
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -172,11 +195,11 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
-  MX_TIM2_Init();
-  MX_TIM4_Init();
-  MX_TIM11_Init();
   MX_DMA_Init();
   MX_I2C1_Init();
+  MX_TIM11_Init();
+  MX_TIM2_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
   	HAL_TIM_Base_Start_IT(&htim11); // micro timer
     HAL_TIM_Base_Start(&htim2); // Speed
@@ -200,26 +223,43 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-	  // parraregis driving act as DigitalOUT       // A0 as ser in
-
-
-	  	  if (micros()-timeStampSR > 3000)      // don't use 1
+	  	  ///// GrandState ///////////////////
+	  	  if(micros() - TimeStampGrand >= 1000){
+	  		TimeStampGrand = micros();
+	  		GrandStatumix();
+	  	  }
+	  	  // Encoder I2CRead
+	  	  if (micros()-timeStampSR > 1000)      // don't use 1
 	  	          {
 	  	              timeStampSR = micros();           //set new time stamp
 	  	              flag_absenc = 1;
-
 	  	          }
-
 	  	  AbsEncI2CRead(&RawEnBitA,&RawEnBitB);
 	  	  encoderSpeedReaderCycle();
-	  	  pwr_sense = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1);
+	  	  pwr_sense = HAL_GPIO_ReadPin(Pwr_Sense_GPIO_Port, Pwr_Sense_Pin);
+
+	  	  ///////////////////////// speed measyre////////
+	  	if(micros() - timestampve >= 10000){
+	  			  timestampve = micros();
+	  			  posSpeedlog[1] = posSpeedlog[0];
+	  			  posSpeedlog[0] = BinPosXI;
+	  			  deltaar = (fabsf(posSpeedlog[1]-posSpeedlog[0])) / 1024.0;
+	  			  RoundNumnd = deltaar*100.0*60.0;
+	  			  Speedsmoothfunc(RoundNumnd);
+	  		 }
 
 	  	  ///////////////////// 2KHz change PWM PB6////////////////////
-	  	  if(micros() - TimeLoopPWM > 500){
-	  	  		  TimeLoopPWM = micros(); // stamp
+	  	  if(micros() - timestampPWM >= 500){
+	  		  	  timestampPWM = micros(); // stamp
 	  	  		  __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, PWMOut);
 	  	  		  //ADC_Target = ADCFeedx[1].datt;
+	  	  		HAL_GPIO_WritePin(Mot_dir_GPIO_Port, Mot_dir_Pin, mot_dirctn);
 	  	  	  }
+
+	  	 if (grandState ==  work){
+	  		 PIDzero();
+	  		 MotDrvCytron();}
+
   }
   /* USER CODE END 3 */
 }
@@ -515,18 +555,19 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, Mot_dir_Pin|En_SHLD_Pin|En_SERCLK_Pin|En_INHCLK_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, Mot_dir_Pin|PLamp_Green_Pin|PLamp_Blue_Pin|PLamp_Yellow_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
+  /*Configure GPIO pins : B1_Pin EXTI11_Stop_Pin */
+  GPIO_InitStruct.Pin = B1_Pin|EXTI11_Stop_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
@@ -541,101 +582,113 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(Pwr_Sense_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : Mot_dir_Pin En_SHLD_Pin En_SERCLK_Pin En_INHCLK_Pin */
-  GPIO_InitStruct.Pin = Mot_dir_Pin|En_SHLD_Pin|En_SERCLK_Pin|En_INHCLK_Pin;
+  /*Configure GPIO pins : Mot_dir_Pin PLamp_Green_Pin PLamp_Blue_Pin PLamp_Yellow_Pin */
+  GPIO_InitStruct.Pin = Mot_dir_Pin|PLamp_Green_Pin|PLamp_Blue_Pin|PLamp_Yellow_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : D9_VeloDt_Pin */
-  GPIO_InitStruct.Pin = D9_VeloDt_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(D9_VeloDt_GPIO_Port, &GPIO_InitStruct);
-
   /*Configure GPIO pin : EXTI10_Emer_Pin */
   GPIO_InitStruct.Pin = EXTI10_Emer_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(EXTI10_Emer_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : Stop_Sense_Pin */
+  GPIO_InitStruct.Pin = Stop_Sense_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(Stop_Sense_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : EXTI2_SetZero_Pin */
+  GPIO_InitStruct.Pin = EXTI2_SetZero_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(EXTI2_SetZero_GPIO_Port, &GPIO_InitStruct);
+
   /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI2_IRQn);
+
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 
 /* USER CODE BEGIN 4 */
+////////// Grand State //////////////////////////////////////////////////////
+void GrandStatumix(){
+	if (grandState != Ready){
+		HAL_GPIO_WritePin(PLamp_Green_GPIO_Port, PLamp_Green_Pin, GPIO_PIN_RESET);
+	}
+	if (grandState != work){
+			HAL_GPIO_WritePin(PLamp_Blue_GPIO_Port, PLamp_Blue_Pin, GPIO_PIN_RESET);
+		}
+	if (grandState != stop || grandState != stopnd){
+				HAL_GPIO_WritePin(PLamp_Yellow_GPIO_Port, PLamp_Yellow_Pin, GPIO_PIN_RESET);
+			}
+
+	stop_sense = HAL_GPIO_ReadPin(Stop_Sense_GPIO_Port, Stop_Sense_Pin);
+
+
+	switch(grandState){
+	default:
+	case Ready:
+		HAL_GPIO_WritePin(PLamp_Green_GPIO_Port, PLamp_Green_Pin, GPIO_PIN_SET);
+		PWMOut = 5000;
+		if (pwr_sense == 1){grandState = emer;}
+		if (stop_sense == 0){grandState = stop;}
+		if (bluecounter != 0){grandState = work;} // can go work from ready only
+	break;
+
+	case work:
+		HAL_GPIO_WritePin(PLamp_Blue_GPIO_Port, PLamp_Blue_Pin, GPIO_PIN_SET);
+
+	// transfer to while
+
+		if (pwr_sense == 1){
+			grandState = emer;
+			u_contr = 0;}
+		if (stop_sense == 0){
+			PWMOut = 0;
+			grandState = stopnd;
+			u_contr = 0;}
+	break;
+
+	case stop:
+		HAL_GPIO_WritePin(PLamp_Yellow_GPIO_Port, PLamp_Yellow_Pin, GPIO_PIN_SET);
+		PWMOut = 0;
+
+		if (stop_sense == 1){
+			grandState = Ready;
+
+			mot_dirctn++;
+			mot_dirctn%=2;
+		}
+	break;
+
+	case stopnd:
+			HAL_GPIO_WritePin(PLamp_Yellow_GPIO_Port, PLamp_Yellow_Pin, GPIO_PIN_SET);
+			PWMOut = 0;
+			Integral = 0;
+
+			if (stop_sense == 1){
+				grandState = work;
+			}
+		break;
+
+	case emer:
+		PWMOut = 0;
+		if (pwr_sense == 0){
+			grandState = Ready;
+			HAL_Delay(100);
+			IOExpenderInit();
+		}
+	break;
+	}
+}
 ////////// Absolute Encoder ////////////////////////////////////////////
-void ParraRegisDriveAbsENC(uint8_t encbit){
-
-    switch (PRState)
-    {
-        case INIT: // preparation
-        default:
-        SHLD = 1; //bar disable
-        SERCLK = 0;
-        INHCLK = 0;
-        //LATCHER = 0;
-
-        SegDigit = 0;
-        EnBitlog = 0b0;
-        PRState = SHLDER; // go to latcher after preparation
-        break;
-
-        case SHLDER:  //7seg = inp; // get parallel out in i66
-        SHLD = 0;     // trig parallel get 1 times
-        SERCLK = 0;
-        INHCLK = 1;   // use inhibit clk to trig / no distrub ser clk
-
-
-        PRState = SFTER;
-        break;
-
-        case SFTER: // send serial
-        SHLD = 1;
-        INHCLK = 0;
-        SERCLK = 1;
-
-        // load data
-        SERIN = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1);
-        //EnBitlog = (EnBitlog << 1)+ SERIN; // shift first bit 2 left
-        EnBitlog = (SERIN << SegDigit)+EnBitlog;// shift first bit from right
-
-        SegDigit++;
-        if(SegDigit >= encbit + 1){
-            PRState = LATCHING; // finish and reshift next dataset
-            }
-        else{
-            PRState = RESFTER; // down clock to shift next serial digit
-            }
-        break;
-
-        case RESFTER: // down clock before send next digit
-        SHLD = 1;
-        SERCLK = 0; // down clock
-        INHCLK = 0;
-        //LATCHER = 0;
-
-        PRState = SFTER;
-        break;
-
-        case LATCHING:  // confirm data
-        SHLD = 1;
-        SERCLK = 0; // down clock
-        INHCLK = 0;
-        //LATCHER = 1;
-
-        // send complete gray
-        // >>1 to cut the first duplicate bit(How tf it comes ?)
-        GrayCBit = EnBitlog >> 1;
-        PRState = INIT;
-        break;
-
-        }//end switch
-    }//end void prll
-
 uint16_t GraytoBinario(uint16_t grayx,uint8_t numbit){ // numbit=10
 
 	uint16_t binaryout = 0b0;
@@ -659,17 +712,7 @@ uint16_t GraytoBinario(uint16_t grayx,uint8_t numbit){ // numbit=10
 }
 
 void encoderSpeedReaderCycle() {
-	//
-	//
-	//
-	//
 	// re code using position dif time
-	//
-	//
-	//
-	//
-	//
-	//
 	//get DMA Position form number of data
 	uint32_t CapPos =CAPTURENUM -  __HAL_DMA_GET_COUNTER(htim2.hdma[TIM_DMA_ID_CC1]);
 	uint32_t sum = 0 ;
@@ -691,6 +734,57 @@ void encoderSpeedReaderCycle() {
 	RoundNum = (60000000.0 / MeanTime)/1024.0; // round per min detect by 1024 clk
 
 }
+
+void Speedsmoothfunc(float inpdat){
+	//static uint8_t scc 0;
+	for(int j = CAPTURENUM-1; j >= 0;j--){
+		speedsmoothlog[j] = speedsmoothlog[j-1];
+	}
+	speedsmoothlog[0] = inpdat;
+
+	float summa = 0.0;
+	int errcut = 0;
+	for (int k = 0; k < CAPTURENUM;k++){
+		if (speedsmoothlog[k]>=500){errcut++;}
+		else{summa+= speedsmoothlog[k];}
+
+	}
+	RoundNumnd_sm =  summa / (CAPTURENUM-errcut);
+}
+
+///////////////////// PID Zero /////////////////////////////
+void PIDzero(){
+	CrrntTime = micros();
+	DeltaTime = (CrrntTime - PreviTime) / 1000000.0; // seconds
+	PreviTime = CrrntTime; // log previ here for next loop
+
+	ErrPos[0] = TargetDeg - BinPosXI;
+
+	Propo = K_P * ErrPos[0];
+
+	Integral = Integral + ( ErrPos[0] * DeltaTime ); // Integral -Newton-Leibniz
+
+	Derivate = (ErrPos[0]-ErrPos[1]) / DeltaTime; // d/dt position
+
+	u_contr = Propo + (K_I * Integral) ; // PID u[k] + (K_D * Derivate)
+
+	ErrPos[1] = ErrPos[0]; // log previous error
+}
+
+void MotDrvCytron(){
+
+	//   direction chk
+	if(u_contr < 0){mot_dirctn= 1;}
+	else if(u_contr > 0) {mot_dirctn = 0;}
+	else{PWMOut = 0;}
+
+	// speed
+	PWMOut= (int)fabsf(u_contr); // Absolute int
+	if(PWMOut> 7000){PWMOut = 7000;} // saturate 50% gear 1:6 - 120rpm => 10rpm
+	if(PWMOut < 1600 && fabsf(ErrPos[0]) >= 4){PWMOut = 1600;} //pvnt too low pwm that can't drive mot
+	//if(ErrPos[0] < 2){PWMOut = 0;}
+}
+
 /////////////////////Abs Encoder I2C////////////////////////////////////////////
 void IOExpenderInit() {// call when start system
 	//Init All// setting from datasheet p17 table 3.5
@@ -745,11 +839,32 @@ void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB){
 }
 /////////////// Emer Interrupt /////////////////////////////////
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
-	if(GPIO_Pin == GPIO_PIN_10){
+	//// EMER ////
+	if(GPIO_Pin == GPIO_PIN_11){
 		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 		counter_e++;
+		grandState = emer;
+		bluecounter = 0;
+		PWMOut = 0;
 		// Motor Driver Torque Lock here
 	}
+	//// Stop ////
+	if(GPIO_Pin == GPIO_PIN_10){
+		PWMOut = 0;
+		bluecounter = 0;
+		if(grandState == work){grandState = stopnd;}
+		//else{grandState = stop;}
+
+		}
+	//// work ////
+	if(GPIO_Pin == GPIO_PIN_13){
+		bluecounter++;
+	}
+
+	//// setzero ////
+		if(GPIO_Pin == GPIO_PIN_2){
+			TargetDeg = 0 + POSOFFSET;
+		}
 }
 ///////////////////////////////////// micro timer////////////////////////////////////
 uint64_t micros()
