@@ -1,7 +1,7 @@
-main.c:81:5:main	120	static
-main.c:228:6:SystemClock_Config	88	static
-main.c:273:13:MX_USART2_UART_Init	8	static
-main.c:306:13:MX_GPIO_Init	48	static
-main.c:346:9:UARTRecieveIT	16	static
-main.c:366:6:LED_UART_UI	4	static
-main.c:375:6:Error_Handler	4	static,ignoring_inline_asm
+../Core/Src/main.c:81:5:main	120	static
+../Core/Src/main.c:228:6:SystemClock_Config	88	static
+../Core/Src/main.c:273:13:MX_USART2_UART_Init	8	static
+../Core/Src/main.c:306:13:MX_GPIO_Init	48	static
+../Core/Src/main.c:346:9:UARTRecieveIT	16	static
+../Core/Src/main.c:366:6:LED_UART_UI	4	static
+../Core/Src/main.c:375:6:Error_Handler	4	static,ignoring_inline_asm

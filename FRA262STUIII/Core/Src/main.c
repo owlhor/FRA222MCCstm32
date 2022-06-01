@@ -51,7 +51,7 @@
 /* USER CODE BEGIN PD */
 #define CAPTURENUM 16 // sample data array size for velo
 #define POSOFFSET  0 // angle zero offset abs enc
-#define ADDR_EFFT 0x23 // End Effector Addr 0x23 0010 0011
+#define ADDR_EFFT 0b01000110 // End Effector Addr 0x23 0010 0011
 #define ADDR_IOXT 0b01000000 // datasheet p15
 /* USER CODE END PD */
 
@@ -119,8 +119,8 @@ float DeltaTime = 0;
 float CrrntTime = 0;
 uint8_t ErrPosx = 0;
 
-float K_P = 36;
-float K_I = 0.038;
+float K_P = 15;
+float K_I = 0.02;
 float K_D = 0;
 
 float Propo;
@@ -136,6 +136,15 @@ float Derivate;
 // Regis 0x34 : Work (31sec)
 // Regis 0x56 : Stop (1sec)
 // Regis 0x78 : wait new (- sec)
+//static enum {ef_INIT,ef_addr,ef_addr_wait,} efftState = ef_INIT;
+//uint8_t addr_effct = ADDR_EFFT;
+uint8_t efft_status = 0;
+uint8_t flag_efftActi = 0;
+uint8_t flag_efftRead = 0;
+uint8_t trig_efftRead = 0;
+uint64_t timestamp_efft = 0;
+//static enum {ef_INIT,ef_addreq,ef_addreq_wait,ef_data, ef_data_wait} efrdState = ef_INIT;
+//uint16_t counter_efft = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -157,6 +166,9 @@ void GrandStatumix();
 void Speedsmoothfunc(float inpdat);
 void PIDzero();
 void MotDrvCytron();
+void Efft_activate();
+//void Efft_activate(uint8_t devADDR, uint8_t *cmmd);
+void Efft_read(uint8_t *Rddata);
 uint64_t micros();
 
 /* USER CODE END PFP */
@@ -212,7 +224,7 @@ int main(void)
 
     //MCP23017 setting init
     HAL_Delay(100);
-    IOExpenderInit();
+    //IOExpenderInit();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -224,17 +236,18 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
 	  	  ///// GrandState ///////////////////
-	  	  if(micros() - TimeStampGrand >= 1000){
-	  		TimeStampGrand = micros();
-	  		GrandStatumix();
-	  	  }
+	  	  //if(micros() - TimeStampGrand >= 1000){
+	  		//TimeStampGrand = micros();
+
+	  	  //}
 	  	  // Encoder I2CRead
-	  	  if (micros()-timeStampSR > 1000)      // don't use 1
+	  	  if (micros()-timeStampSR >= 1000)      // don't use 1
 	  	          {
 	  	              timeStampSR = micros();           //set new time stamp
-	  	              flag_absenc = 1;
+	  	              //flag_absenc = 1;
+	  	              GrandStatumix();
 	  	          }
-	  	  AbsEncI2CRead(&RawEnBitA,&RawEnBitB);
+	  	 // AbsEncI2CRead(&RawEnBitA,&RawEnBitB);
 	  	  encoderSpeedReaderCycle();
 	  	  pwr_sense = HAL_GPIO_ReadPin(Pwr_Sense_GPIO_Port, Pwr_Sense_Pin);
 
@@ -259,6 +272,17 @@ int main(void)
 	  	 if (grandState ==  work){
 	  		 PIDzero();
 	  		 MotDrvCytron();}
+
+	  	 //////////// End Effector /////////////////////
+	  	 Efft_activate(); // Activate by flag_efftActi = 1;
+	  	 Efft_read(&efft_status);
+	  	 // trig_efftRead up for 10 times afrer shoot / trig at shoot state
+	  	 if(trig_efftRead != 0 && micros() - timestamp_efft >= 500000){
+	  		 timestamp_efft = micros();
+	  		 flag_efftRead = 1;
+	  		 trig_efftRead++;
+	  	 }if(trig_efftRead >= 12){trig_efftRead = 0;} // read xx times
+
 
   }
   /* USER CODE END 3 */
@@ -563,8 +587,8 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, Mot_dir_Pin|PLamp_Green_Pin|PLamp_Blue_Pin|PLamp_Yellow_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : B1_Pin EXTI11_Stop_Pin */
-  GPIO_InitStruct.Pin = B1_Pin|EXTI11_Stop_Pin;
+  /*Configure GPIO pins : B1_Pin EXTI11_EMER_Pin */
+  GPIO_InitStruct.Pin = B1_Pin|EXTI11_EMER_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
@@ -589,11 +613,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : EXTI10_Emer_Pin */
-  GPIO_InitStruct.Pin = EXTI10_Emer_Pin;
+  /*Configure GPIO pin : EXTI10_Stop_Pin */
+  GPIO_InitStruct.Pin = EXTI10_Stop_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(EXTI10_Emer_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(EXTI10_Stop_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : Stop_Sense_Pin */
   GPIO_InitStruct.Pin = Stop_Sense_Pin;
@@ -791,8 +815,10 @@ void IOExpenderInit() {// call when start system
 	static uint8_t Setting[0x16] = {
 			0b11111111, // IODIRA 1 = in/2=0ut
 			0b11111111, // IODIRB
-			0x00, 0x00, 0x00, 0x00, 0x00,
-			0x00, 0x00, 0x00, 0x00, 0x00,
+			0b11111111, // IPOLA  1 = invert / 0  nonINV
+			0b11111111, // IPOLB
+			0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00,
 			0x00, // GPPUA
 			0b00111111, // GPPUB Pull up 100k R
 			0x00, 0x00, 0x00, 0x00,
@@ -827,16 +853,118 @@ void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB){
 		break;
 
 		case 3:
-			GrayCBitx = (RawEnBitB << 8) | RawEnBitA;
+			//invert in IPOL
+			GrayCBitXI = (RawEnBitB << 8) | RawEnBitA; // GrayCBitx
 			//GrayCBitXI = ~GrayCBitx - 0b1111110000000000; // invert and clear 6 high
-			GrayCBitXI = ~GrayCBitx & 0b0000001111111111;
+			//GrayCBitXI = ~GrayCBitx & 0b0000001111111111;
 			//BinPosx = GraytoBinario(GrayCBitx, 10);
-			BinPosXI = GraytoBinario(GrayCBitXI, 10);
+			BinPosXI = GraytoBinario(GrayCBitXI, 10);  //  + POSOFFSET
 			flag_absenc = 0;
 		break;
 		}
 	}
 }
+//////////////// End Effector /////////////////////////////////
+void Efft_activate(){
+	uint8_t cmmd = 0x45;
+
+	static enum{ef_INIT, ef_shoot} efshoot = ef_INIT;
+	switch(efshoot){
+	default:
+	case ef_INIT:
+		if(flag_efftActi != 0 && hi2c1.State == HAL_I2C_STATE_READY){
+			HAL_I2C_Master_Seq_Transmit_IT(&hi2c1, ADDR_EFFT, &cmmd, 0, I2C_FIRST_FRAME);
+			efshoot = ef_shoot;
+		}
+	break;
+
+	case ef_shoot:
+		if (hi2c1.State == HAL_I2C_STATE_READY){
+			HAL_I2C_Master_Seq_Transmit_IT(&hi2c1, ADDR_EFFT, &cmmd, 1, I2C_LAST_FRAME);
+			efshoot = ef_INIT;
+			flag_efftActi = 0;
+			trig_efftRead = 1;
+		}
+	break;
+	}
+
+}
+void Efft_read(uint8_t *Rddata){
+
+	//uint8_t AddrRd = ADDR_EFFT | 0b00000001; //  0b01000111
+	static uint8_t readRQ = 0x23;
+	//static uint8_t readrqq[2] = {0x23,0x23};
+
+	//static enum {ef_INIT,ef_addreq,ef_addreq_wait,ef_data, ef_data_wait} efrdState = ef_INIT;
+	static uint8_t efrdStatus = 0;
+	/*
+	if (flag_efftRead != 0 && hi2c1.State == HAL_I2C_STATE_READY){
+		//HAL_I2C_Mem_Read_IT(&hi2c1, ADDR_EFFT, 0x23, I2C_MEMADD_SIZE_8BIT, Rddata, 1);
+		//HAL_I2C_Mem_Read(&hi2c1, ADDR_EFFT, 0x23, I2C_MEMADD_SIZE_8BIT, Rddata, 1, 100);
+		//flag_efftRead = 0;
+	}*/
+	switch(efrdStatus){
+	default:
+	case 0:
+		if (flag_efftRead != 0 && hi2c1.State == HAL_I2C_STATE_READY){
+			//HAL_I2C_Master_Transmit_IT(&hi2c1, ADDR_EFFT, 0x23, 1);
+			HAL_I2C_Master_Seq_Transmit_IT(&hi2c1, ADDR_EFFT, &readRQ, 1, I2C_FIRST_AND_NEXT_FRAME);
+			efrdStatus = 1;
+		}
+	break;
+
+	case 1:
+
+		if (hi2c1.State == HAL_I2C_STATE_READY){
+			HAL_I2C_Master_Seq_Receive_IT(&hi2c1, ADDR_EFFT, Rddata, 1, I2C_LAST_FRAME);
+			//HAL_I2C_Master_Receive_IT(&hi2c1, ADDR_EFFT, Rddata, 1);
+		flag_efftRead = 0;
+		efrdStatus = 0;
+
+			}
+	break;
+	}
+
+/*
+	switch(efrdState){
+	default:
+	case ef_INIT:
+		if(flag_efftRead != 0){efrdState = ef_addreq;}
+	break;
+
+	case ef_addreq:
+		if (hi2c1.State == HAL_I2C_STATE_READY){
+			HAL_I2C_Master_Seq_Transmit_IT(&hi2c1, ADDR_EFFT, &readRQ, 1, I2C_FIRST_FRAME);
+			efrdState = ef_addreq_wait;
+		}
+	break;
+
+	case ef_addreq_wait:
+		if (hi2c1.State == HAL_I2C_STATE_READY){
+			HAL_I2C_Master_Seq_Transmit_IT(&hi2c1, ADDR_EFFT, &readRQ, 1, I2C_NEXT_FRAME);
+			efrdState = ef_data;
+		}
+	break;
+
+	case ef_data:
+		HAL_I2C_Master_Seq_Receive_IT(&hi2c1, AddrRd, Rddata, 1, I2C_LAST_FRAME);
+		efrdState = ef_INIT;
+		flag_efftRead = 0;
+		//efrdState = ef_data_wait;
+	break;
+
+	case ef_data_wait:
+		if(hi2c1.State == HAL_I2C_STATE_READY)
+			{
+			efrdState = ef_INIT;
+			flag_efftRead = 0;
+			}
+	break;
+	}
+*/
+}
+
+
 /////////////// Emer Interrupt /////////////////////////////////
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	//// EMER ////
@@ -856,14 +984,17 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 		//else{grandState = stop;}
 
 		}
-	//// work ////
+	//// work Blue button////
 	if(GPIO_Pin == GPIO_PIN_13){
 		bluecounter++;
+		flag_efftActi = 1;
+		trig_efftRead = 1;
+		//flag_efftRead = 1;
 	}
 
 	//// setzero ////
 		if(GPIO_Pin == GPIO_PIN_2){
-			TargetDeg = 0 + POSOFFSET;
+			TargetDeg = 0;
 		}
 }
 ///////////////////////////////////// micro timer////////////////////////////////////

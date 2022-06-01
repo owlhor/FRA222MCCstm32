@@ -55,6 +55,7 @@ uint16_t ADCin = 0; //ADC Read out from DAC
 uint16_t dataOut = 0;		// bit 11-0 data DAC
 uint8_t DACConfig = 0b0011; // bit 15-12 config A!/B | BUF | Gain | SHDN
 uint64_t _micro = 0;
+uint8_t shdntg = 0;
 
 static uint8_t sigstate = 0;
 static uint16_t sqcounter = 0;
@@ -135,6 +136,10 @@ int main(void)
 	  			timestamp = micros();
 
 	  			SignalGen();
+
+	  			//shutdown test
+	  			if(shdntg == 1){DACConfig = 0b0010;}
+	  			else{DACConfig = 0b0011;}
 
 	  			// sawtooth
 	  			//dataOut++;
@@ -309,7 +314,7 @@ static void MX_TIM3_Init(void)
   htim3.Instance = TIM3;
   htim3.Init.Prescaler = 999;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 1000;
+  htim3.Init.Period = 999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)

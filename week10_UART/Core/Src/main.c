@@ -124,7 +124,7 @@ int main(void)
 
 	  //		UARTRecieveAndResponsePolling();
 
-	  		/*Method 2 Interrupt Mode  print every 32 byte*/
+	  /*Method 2 Interrupt Mode  print every 32 byte*/
 
 	  // IT, no timeout// recieved from console
 	  		HAL_UART_Receive_IT(&huart2,  (uint8_t*)RxDataBuffer, 32);

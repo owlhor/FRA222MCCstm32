@@ -175,7 +175,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
 
     __HAL_RCC_GPIOA_CLK_ENABLE();
     /**TIM2 GPIO Configuration
-    PA15     ------> TIM2_CH1
+    PA0-WKUP     ------> TIM2_CH1
     */
     GPIO_InitStruct.Pin = TIM2_CH1_VINCp_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
@@ -278,7 +278,7 @@ void HAL_TIM_Base_MspDeInit(TIM_HandleTypeDef* htim_base)
     __HAL_RCC_TIM2_CLK_DISABLE();
 
     /**TIM2 GPIO Configuration
-    PA15     ------> TIM2_CH1
+    PA0-WKUP     ------> TIM2_CH1
     */
     HAL_GPIO_DeInit(TIM2_CH1_VINCp_GPIO_Port, TIM2_CH1_VINCp_Pin);
 
