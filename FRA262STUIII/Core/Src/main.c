@@ -50,7 +50,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define CAPTURENUM 16 // sample data array size for velo
-#define POSOFFSET  0 // angle zero offset abs enc
+#define POSOFFSET  -442 // angle zero offset abs enc
 #define ADDR_EFFT 0b01000110 // End Effector Addr 0x23 0010 0011
 #define ADDR_IOXT 0b01000000 // datasheet p15
 /* USER CODE END PD */
@@ -82,10 +82,11 @@ uint64_t _micros = 0;
 uint8_t counter_e = 0;
 
 //////////////Abs Encoder 10 bit I2C /////////////////////////////
-uint8_t encResbit = 10;
+//uint8_t encResbit = 10;
 uint32_t timeStampSR =0;
-uint8_t RawEnBitA = 0b0, RawEnBitB = 0b0;
-uint16_t GrayCBitx = 0b0, GrayCBitXI = 0b0, BinPosx = 0b0, BinPosXI = 0b0;
+//uint8_t RawEnBitA = 0b0, RawEnBitB = 0b0;
+uint8_t RawEnBitAB[2] = {0b0};
+uint16_t GrayCBitXI = 0b0, BinPosXI = 0b0;
 static uint8_t flag_absenc = 0;
 ////////////// velo dma input capture////////////////////
 //DMA Buffer
@@ -160,6 +161,7 @@ static void MX_TIM4_Init(void);
 void IOExpenderInit();
 uint16_t GraytoBinario(uint16_t grayx,uint8_t numbit);
 void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB);
+void AbsEncI2CReadx(uint8_t *RawRAB);
 void encoderSpeedReaderCycle();
 
 void GrandStatumix();
@@ -191,7 +193,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+     HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -224,7 +226,7 @@ int main(void)
 
     //MCP23017 setting init
     HAL_Delay(100);
-    //IOExpenderInit();
+    IOExpenderInit();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -244,10 +246,10 @@ int main(void)
 	  	  if (micros()-timeStampSR >= 1000)      // don't use 1
 	  	          {
 	  	              timeStampSR = micros();           //set new time stamp
-	  	              //flag_absenc = 1;
+	  	              flag_absenc = 1;
 	  	              GrandStatumix();
 	  	          }
-	  	 // AbsEncI2CRead(&RawEnBitA,&RawEnBitB);
+	  	  AbsEncI2CReadx(RawEnBitAB);
 	  	  encoderSpeedReaderCycle();
 	  	  pwr_sense = HAL_GPIO_ReadPin(Pwr_Sense_GPIO_Port, Pwr_Sense_Pin);
 
@@ -660,7 +662,7 @@ void GrandStatumix(){
 	default:
 	case Ready:
 		HAL_GPIO_WritePin(PLamp_Green_GPIO_Port, PLamp_Green_Pin, GPIO_PIN_SET);
-		PWMOut = 5000;
+		PWMOut = 1200;
 		if (pwr_sense == 1){grandState = emer;}
 		if (stop_sense == 0){grandState = stop;}
 		if (bluecounter != 0){grandState = work;} // can go work from ready only
@@ -830,10 +832,9 @@ void IOExpenderInit() {// call when start system
 			0x16, 100);
 }
 
-void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB){
+void AbsEncI2CReadx(uint8_t *RawRAB){
 
 	if(flag_absenc != 0 && hi2c1.State == HAL_I2C_STATE_READY){
-		//static uint8_t absencStep = 0;
 		switch(flag_absenc){
 		default:
 			break;
@@ -842,23 +843,18 @@ void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB){
 			//HAL_I2C_Master_Receive(&hi2c1, ADDR_IOXT, GrayCBitx, 1, 100);
 			//HAL_I2C_Master_Seq_Receive_DMA(hi2c, DevAddress, pData, Size, XferOptions);
 			HAL_I2C_Mem_Read(&hi2c1, ADDR_IOXT, 0x12, I2C_MEMADD_SIZE_8BIT,
-						RawRA, 1, 100);
+						RawRAB, 2, 100);
 			flag_absenc = 2;
 		break;
 
 		case 2:
-			HAL_I2C_Mem_Read(&hi2c1, ADDR_IOXT, 0x13, I2C_MEMADD_SIZE_8BIT,
-								RawRB, 1, 100);
-			flag_absenc = 3;
-		break;
-
-		case 3:
 			//invert in IPOL
-			GrayCBitXI = (RawEnBitB << 8) | RawEnBitA; // GrayCBitx
+			GrayCBitXI = (RawEnBitAB[1] << 8) | RawEnBitAB[0]; // GrayCBitx
+
 			//GrayCBitXI = ~GrayCBitx - 0b1111110000000000; // invert and clear 6 high
 			//GrayCBitXI = ~GrayCBitx & 0b0000001111111111;
-			//BinPosx = GraytoBinario(GrayCBitx, 10);
-			BinPosXI = GraytoBinario(GrayCBitXI, 10);  //  + POSOFFSET
+			BinPosXI = GraytoBinario(GrayCBitXI, 10) + POSOFFSET;  //
+			if (BinPosXI >= 1024){BinPosXI = BinPosXI % 1024;}
 			flag_absenc = 0;
 		break;
 		}
@@ -891,11 +887,8 @@ void Efft_activate(){
 }
 void Efft_read(uint8_t *Rddata){
 
-	//uint8_t AddrRd = ADDR_EFFT | 0b00000001; //  0b01000111
 	static uint8_t readRQ = 0x23;
 	//static uint8_t readrqq[2] = {0x23,0x23};
-
-	//static enum {ef_INIT,ef_addreq,ef_addreq_wait,ef_data, ef_data_wait} efrdState = ef_INIT;
 	static uint8_t efrdStatus = 0;
 	/*
 	if (flag_efftRead != 0 && hi2c1.State == HAL_I2C_STATE_READY){
@@ -925,43 +918,6 @@ void Efft_read(uint8_t *Rddata){
 	break;
 	}
 
-/*
-	switch(efrdState){
-	default:
-	case ef_INIT:
-		if(flag_efftRead != 0){efrdState = ef_addreq;}
-	break;
-
-	case ef_addreq:
-		if (hi2c1.State == HAL_I2C_STATE_READY){
-			HAL_I2C_Master_Seq_Transmit_IT(&hi2c1, ADDR_EFFT, &readRQ, 1, I2C_FIRST_FRAME);
-			efrdState = ef_addreq_wait;
-		}
-	break;
-
-	case ef_addreq_wait:
-		if (hi2c1.State == HAL_I2C_STATE_READY){
-			HAL_I2C_Master_Seq_Transmit_IT(&hi2c1, ADDR_EFFT, &readRQ, 1, I2C_NEXT_FRAME);
-			efrdState = ef_data;
-		}
-	break;
-
-	case ef_data:
-		HAL_I2C_Master_Seq_Receive_IT(&hi2c1, AddrRd, Rddata, 1, I2C_LAST_FRAME);
-		efrdState = ef_INIT;
-		flag_efftRead = 0;
-		//efrdState = ef_data_wait;
-	break;
-
-	case ef_data_wait:
-		if(hi2c1.State == HAL_I2C_STATE_READY)
-			{
-			efrdState = ef_INIT;
-			flag_efftRead = 0;
-			}
-	break;
-	}
-*/
 }
 
 
