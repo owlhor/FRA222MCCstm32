@@ -268,7 +268,12 @@ int main(void)
 	  		  	  timestampPWM = micros(); // stamp
 	  	  		  __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, PWMOut);
 	  	  		  //ADC_Target = ADCFeedx[1].datt;
-	  	  		HAL_GPIO_WritePin(Mot_dir_GPIO_Port, Mot_dir_Pin, mot_dirctn);
+	  	  		//HAL_GPIO_WritePin(Mot_dir_GPIO_Port, Mot_dir_Pin, mot_dirctn);
+	  	  		if (mot_dirctn == 0){
+	  	  		HAL_GPIO_WritePin(Mot_dir_GPIO_Port, Mot_dir_Pin, GPIO_PIN_RESET);
+	  	  		}else{
+	  	  		HAL_GPIO_WritePin(Mot_dir_GPIO_Port, Mot_dir_Pin, GPIO_PIN_SET);
+	  	  		}
 	  	  	  }
 
 	  	 if (grandState ==  work){
