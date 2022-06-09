@@ -40,6 +40,8 @@
 /* USER CODE BEGIN Includes */
 #define _USER_MATH_DEFINES
 #include "math.h"
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -62,6 +64,9 @@
 
 /* Private variables ---------------------------------------------------------*/
  I2C_HandleTypeDef hi2c1;
+I2C_HandleTypeDef hi2c3;
+DMA_HandleTypeDef hdma_i2c3_rx;
+DMA_HandleTypeDef hdma_i2c3_tx;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim4;
@@ -121,7 +126,7 @@ float CrrntTime = 0;
 uint8_t ErrPosx = 0;
 
 float K_P = 15;
-float K_I = 0.02;
+float K_I = 0.002;
 float K_D = 0;
 
 float Propo;
@@ -144,8 +149,36 @@ uint8_t flag_efftActi = 0;
 uint8_t flag_efftRead = 0;
 uint8_t trig_efftRead = 0;
 uint64_t timestamp_efft = 0;
-//static enum {ef_INIT,ef_addreq,ef_addreq_wait,ef_data, ef_data_wait} efrdState = ef_INIT;
-//uint16_t counter_efft = 0;
+////////////////////// UART UI Base System ////////////////////////////
+char TxDataBuffer[32] = { 0 };
+uint8_t RxDataBuffer[32] = { 0 };
+uint8_t storeRx[10] = { 0 };
+uint8_t temp_s[2]="Xu";		// ack1
+uint8_t temp_f[2]="Fn";		// ack2
+uint8_t Posdata;
+//int StorePos = 0;
+//int Posdata_o = 0;
+int DataIn;
+uint8_t M_state = 0;
+//uint8_t N_state = 0;
+
+uint8_t chkM = 0;   // Check state before work
+uint8_t StartM;		// 14 work State
+
+uint8_t NameM;
+
+
+uint8_t dataFN = 0;
+uint8_t Nstation;
+uint8_t dataF1;
+uint8_t dataF2;
+uint8_t dataFSum;
+uint8_t chksum;
+uint8_t chksum1;
+uint8_t chksum2;
+uint8_t chksum3;
+uint8_t countN = 0;
+uint8_t DataNew;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -157,6 +190,7 @@ static void MX_I2C1_Init(void);
 static void MX_TIM11_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM4_Init(void);
+static void MX_I2C3_Init(void);
 /* USER CODE BEGIN PFP */
 void IOExpenderInit();
 uint16_t GraytoBinario(uint16_t grayx,uint8_t numbit);
@@ -169,8 +203,10 @@ void Speedsmoothfunc(float inpdat);
 void PIDzero();
 void MotDrvCytron();
 void Efft_activate();
-//void Efft_activate(uint8_t devADDR, uint8_t *cmmd);
 void Efft_read(uint8_t *Rddata);
+
+void All_mode_UARTUI();
+void UARTRecieveIT();
 uint64_t micros();
 
 /* USER CODE END PFP */
@@ -193,7 +229,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-     HAL_Init();
+  HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -214,6 +250,7 @@ int main(void)
   MX_TIM11_Init();
   MX_TIM2_Init();
   MX_TIM4_Init();
+  MX_I2C3_Init();
   /* USER CODE BEGIN 2 */
   	HAL_TIM_Base_Start_IT(&htim11); // micro timer
     HAL_TIM_Base_Start(&htim2); // Speed
@@ -236,6 +273,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	      ///// IT test
+	 HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
 
 	  	  ///// GrandState ///////////////////
 	  	  //if(micros() - TimeStampGrand >= 1000){
@@ -268,7 +307,6 @@ int main(void)
 	  		  	  timestampPWM = micros(); // stamp
 	  	  		  __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, PWMOut);
 	  	  		  //ADC_Target = ADCFeedx[1].datt;
-	  	  		//HAL_GPIO_WritePin(Mot_dir_GPIO_Port, Mot_dir_Pin, mot_dirctn);
 	  	  		if (mot_dirctn == 0){
 	  	  		HAL_GPIO_WritePin(Mot_dir_GPIO_Port, Mot_dir_Pin, GPIO_PIN_RESET);
 	  	  		}else{
@@ -278,17 +316,24 @@ int main(void)
 
 	  	 if (grandState ==  work){
 	  		 PIDzero();
-	  		 MotDrvCytron();}
+	  		 MotDrvCytron();
+	  	 }
 
 	  	 //////////// End Effector /////////////////////
 	  	 Efft_activate(); // Activate by flag_efftActi = 1;
 	  	 Efft_read(&efft_status);
-	  	 // trig_efftRead up for 10 times afrer shoot / trig at shoot state
+	  	 //// trig_efftRead up for 10 times afrer shoot / trig at shoot state
 	  	 if(trig_efftRead != 0 && micros() - timestamp_efft >= 500000){
 	  		 timestamp_efft = micros();
 	  		 flag_efftRead = 1;
 	  		 trig_efftRead++;
-	  	 }if(trig_efftRead >= 12){trig_efftRead = 0;} // read xx times
+	  	 }if(trig_efftRead >= 12){
+	  		 trig_efftRead = 0;
+	  	 	 flag_efftRead = 0;
+	  		 } // read xx times
+
+	  	 ////////// UART UI Base System //////////////
+	  	UARTRecieveIT();
 
 
   }
@@ -372,6 +417,40 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief I2C3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C3_Init(void)
+{
+
+  /* USER CODE BEGIN I2C3_Init 0 */
+
+  /* USER CODE END I2C3_Init 0 */
+
+  /* USER CODE BEGIN I2C3_Init 1 */
+
+  /* USER CODE END I2C3_Init 1 */
+  hi2c3.Instance = I2C3;
+  hi2c3.Init.ClockSpeed = 400000;
+  hi2c3.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c3.Init.OwnAddress1 = 0;
+  hi2c3.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c3.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c3.Init.OwnAddress2 = 0;
+  hi2c3.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c3.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C3_Init 2 */
+
+  /* USER CODE END I2C3_Init 2 */
 
 }
 
@@ -539,10 +618,10 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.BaudRate = 512000;
+  huart2.Init.WordLength = UART_WORDLENGTH_9B;
   huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Parity = UART_PARITY_EVEN;
   huart2.Init.Mode = UART_MODE_TX_RX;
   huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart2.Init.OverSampling = UART_OVERSAMPLING_16;
@@ -566,6 +645,12 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
+  /* DMA1_Stream4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
   /* DMA1_Stream5_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
@@ -805,13 +890,13 @@ void PIDzero(){
 void MotDrvCytron(){
 
 	//   direction chk
-	if(u_contr < 0){mot_dirctn= 1;}
-	else if(u_contr > 0) {mot_dirctn = 0;}
+	if(u_contr < 0){mot_dirctn= 0;}
+	else if(u_contr > 0) {mot_dirctn = 1;}
 	else{PWMOut = 0;}
 
 	// speed
 	PWMOut= (int)fabsf(u_contr); // Absolute int
-	if(PWMOut> 7000){PWMOut = 7000;} // saturate 50% gear 1:6 - 120rpm => 10rpm
+	if(PWMOut> 4000){PWMOut = 4000;} // saturate 50% gear 1:6 - 120rpm => 10rpm
 	if(PWMOut < 1600 && fabsf(ErrPos[0]) >= 4){PWMOut = 1600;} //pvnt too low pwm that can't drive mot
 	//if(ErrPos[0] < 2){PWMOut = 0;}
 }
@@ -873,15 +958,17 @@ void Efft_activate(){
 	switch(efshoot){
 	default:
 	case ef_INIT:
-		if(flag_efftActi != 0 && hi2c1.State == HAL_I2C_STATE_READY){
-			HAL_I2C_Master_Seq_Transmit_IT(&hi2c1, ADDR_EFFT, &cmmd, 0, I2C_FIRST_FRAME);
+		if(flag_efftActi != 0 && hi2c3.State == HAL_I2C_STATE_READY){
+			HAL_I2C_Master_Seq_Transmit_IT(&hi2c3, ADDR_EFFT, &cmmd, 0, I2C_FIRST_FRAME);
+			//HAL_I2C_Master_Seq_Transmit_IT(&hi2c3, ADDR_EFFT, &cmmd, 1, I2C_FIRST_AND_LAST_FRAME);
+			//HAL_I2C_Master_Transmit(&hi2c3, ADDR_EFFT, &cmmd, 2, 100);
 			efshoot = ef_shoot;
 		}
 	break;
 
 	case ef_shoot:
-		if (hi2c1.State == HAL_I2C_STATE_READY){
-			HAL_I2C_Master_Seq_Transmit_IT(&hi2c1, ADDR_EFFT, &cmmd, 1, I2C_LAST_FRAME);
+		if (hi2c3.State == HAL_I2C_STATE_READY){
+			HAL_I2C_Master_Seq_Transmit_IT(&hi2c3, ADDR_EFFT, &cmmd, 1, I2C_LAST_FRAME);
 			efshoot = ef_INIT;
 			flag_efftActi = 0;
 			trig_efftRead = 1;
@@ -896,41 +983,298 @@ void Efft_read(uint8_t *Rddata){
 	//static uint8_t readrqq[2] = {0x23,0x23};
 	static uint8_t efrdStatus = 0;
 	/*
-	if (flag_efftRead != 0 && hi2c1.State == HAL_I2C_STATE_READY){
-		//HAL_I2C_Mem_Read_IT(&hi2c1, ADDR_EFFT, 0x23, I2C_MEMADD_SIZE_8BIT, Rddata, 1);
-		//HAL_I2C_Mem_Read(&hi2c1, ADDR_EFFT, 0x23, I2C_MEMADD_SIZE_8BIT, Rddata, 1, 100);
-		//flag_efftRead = 0;
-	}*/
+	if (flag_efftRead != 0 && hi2c3.State == HAL_I2C_STATE_READY){
+		HAL_I2C_Mem_Read_IT(&hi2c3, ADDR_EFFT, &readRQ, I2C_MEMADD_SIZE_8BIT, Rddata, 1);
+		//HAL_I2C_Mem_Read(&hi2c1, ADDR_EFFT, &readRQ, I2C_MEMADD_SIZE_8BIT, Rddata, 1, 100);
+		flag_efftRead = 0;
+	}
+	*/
 	switch(efrdStatus){
 	default:
 	case 0:
-		if (flag_efftRead != 0 && hi2c1.State == HAL_I2C_STATE_READY){
-			//HAL_I2C_Master_Transmit_IT(&hi2c1, ADDR_EFFT, 0x23, 1);
-			HAL_I2C_Master_Seq_Transmit_IT(&hi2c1, ADDR_EFFT, &readRQ, 1, I2C_FIRST_AND_NEXT_FRAME);
+		if (flag_efftRead != 0 && hi2c3.State == HAL_I2C_STATE_READY){
+			//HAL_I2C_Master_Transmit_IT(&hi2c3, ADDR_EFFT, 0x23, 1);
+			HAL_I2C_Master_Seq_Transmit_IT(&hi2c3, ADDR_EFFT, &readRQ, 1, I2C_FIRST_AND_NEXT_FRAME);
+			//HAL_I2C_Master_Transmit(&hi2c3, ADDR_EFFT, &readRQ, 2, 100);
+			//HAL_I2C_Master_Seq_Transmit_DMA(&hi2c3, ADDR_EFFT, &readRQ, 1, I2C_FIRST_AND_NEXT_FRAME);
 			efrdStatus = 1;
 		}
 	break;
 
 	case 1:
 
-		if (hi2c1.State == HAL_I2C_STATE_READY){
-			HAL_I2C_Master_Seq_Receive_IT(&hi2c1, ADDR_EFFT, Rddata, 1, I2C_LAST_FRAME);
-			//HAL_I2C_Master_Receive_IT(&hi2c1, ADDR_EFFT, Rddata, 1);
+		if (hi2c3.State == HAL_I2C_STATE_READY){
+			HAL_I2C_Master_Seq_Receive_IT(&hi2c3, ADDR_EFFT, Rddata, 1, I2C_LAST_FRAME);
+			//HAL_I2C_Master_Seq_Receive_DMA(&hi2c3, ADDR_EFFT, Rddata, 1, I2C_LAST_FRAME);
+			//HAL_I2C_Master_Receive(&hi2c3, ADDR_EFFT ,Rddata, 1, 100);
 		flag_efftRead = 0;
 		efrdStatus = 0;
-
 			}
 	break;
 	}
 
 }
+/////////////////UART UI Base System ////////////////////////////
+void All_mode_UARTUI()
+{
+	// DataIn = 1 byte Data from UART Recieve
+	switch (chkM){				// Check mode State
+		default:
+		case 0: 				// Check start INIT
+			StartM = DataIn;    // 	Use in Checksum Frame 3
+			uint8_t chkStart = DataIn >> 4;
+			if (chkStart == 0b1001){ // 9
+				chkM = 1;
+			}else{chkM = 0;}
+			break;
 
+		case 1:					// Check if mode 1 - 14 or not
+			NameM = (DataIn & 0b00001111); // 15
+			if (NameM >= 1 && NameM <= 14){ chkM = 2;}
+			else{chkM = 0;}
+			break;
+		///////////////////////// // 14Mode work State //////////////////////////
+		case 2:
+			switch (NameM){			// 14Mode work State
+				case 1:			// Check
+					if (dataFN == 2){
+						dataF1 = DataIn;
+					}
+					if(dataFN == 3){
+						dataF2 = DataIn;
+					}
+					chksum = DataIn;
+					chksum2 = ~(StartM + dataF1 + dataF2);
+					if (chksum == chksum2){
+						//M_state = 1;
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 2:			// MCU Connect ,2 byte DataFrame 1
+					chksum = DataIn;
+					chksum1 = ~(StartM);	// Check condition from manual
+					if (chksum == chksum1){	// Transmit back ack1
+						//M_state = 2;
+						/// Add work here///////////
+												///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+
+					break;
+				case 3:			// MCU DisConnect ,2 byte DataFrame 1
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 3;
+						/// Add work here///////////
+						///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 4:			// Set Angular Velocity
+					if (dataFN == 2){
+						dataF1 = DataIn;
+					}
+					if(dataFN == 3){
+						dataF2 = DataIn;
+					}
+					chksum = DataIn;
+					chksum2 = ~(StartM + dataF1 + dataF2);
+					if (chksum == chksum2){
+						//M_state = 4;
+						/// Add work here///////////
+												///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 5:			// Set Angular Position
+					if (dataFN == 2){
+						dataF1 = DataIn;
+					}
+					if(dataFN == 3){
+						dataF2 = DataIn;
+					}
+					chksum = DataIn;
+					chksum2 = ~(StartM + dataF1 + dataF2);
+					if (chksum == chksum2){
+						//M_state = 5;
+						/// Add work here///////////
+												///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 6:			// Set goal single station
+					if (dataFN == 2){
+						dataF1 = DataIn;
+					}
+					if(dataFN == 3){
+						dataF2 = DataIn;
+					}
+					chksum = DataIn;
+					chksum2 = ~(StartM + dataF1 + dataF2);
+					if (chksum == chksum2){
+						//M_state = 6;
+						/// Add work here///////////
+												///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 7:			//set Goal multiple station
+					if (dataFN == 2){
+						Nstation = DataIn;
+					}
+					if (dataFN < Nstation + 3){
+						if (dataFN == countN + 3){
+							dataFSum += DataIn;
+							countN += 1;
+						}
+					}
+					chksum = DataIn;
+					chksum3 = ~(StartM + Nstation + dataFSum);
+					if (chksum == chksum3){
+						//M_state = 7;
+						/// Add work here///////////
+													///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
+						chkM = 0;
+						dataFN = 0;
+						countN = 0;
+					}
+					break;
+				case 8:			// Order Go to that position
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 8;
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						//// simulate workload
+						HAL_Delay(1000);
+						/// Add work here///////////
+						///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_f, 2 ,1000);//Fn
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+
+				////////////// Frame 2 ////////////////////////////////////////
+				case 9:			// Request Current Station
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 9;
+						/// Add work here///////////
+						///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 10:	// Request angular position
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 10;
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						/// Add work here///////////
+						///////////////////////////
+
+						//uint16_t angu = BinPosXI * 360 / 1024;
+						//HAL_UART_Transmit(&huart2, (uint16_t*)angu, 2 ,1000);
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 11:		// Request Max Velo
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 11;
+						/// Add work here///////////
+												///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+				case 12:	// Enable end effector
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 12;
+						flag_efftActi = 1;
+
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+
+				case 13:	// Disable end effector
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 13;
+
+						trig_efftRead = 0;
+						flag_efftRead = 0;
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+
+				case 14:	// Set Home
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						M_state = 14;
+						/// Add work here///////////
+						TargetDeg = 0;
+						//// PID and MotDrv to 0
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+			}
+	}
+
+}
+
+void UARTRecieveIT()
+{
+	static uint32_t dataPos =0;
+	int16_t data=-1;
+	HAL_UART_Receive_IT(&huart2,  (uint8_t*)RxDataBuffer, 32);
+	if(huart2.RxXferSize - huart2.RxXferCount!=dataPos)
+	{
+		data=RxDataBuffer[dataPos];
+		DataIn = data;
+		dataPos= (dataPos+1)%huart2.RxXferSize;
+		Posdata = dataPos;
+		dataFN += 1;
+	}
+	All_mode_UARTUI();
+
+}
 
 /////////////// Emer Interrupt /////////////////////////////////
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	//// EMER ////
 	if(GPIO_Pin == GPIO_PIN_11){
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+		//HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 		counter_e++;
 		grandState = emer;
 		bluecounter = 0;
@@ -949,8 +1293,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	if(GPIO_Pin == GPIO_PIN_13){
 		bluecounter++;
 		flag_efftActi = 1;
-		trig_efftRead = 1;
-		//flag_efftRead = 1;
+		//trig_efftRead = 1;
 	}
 
 	//// setzero ////
