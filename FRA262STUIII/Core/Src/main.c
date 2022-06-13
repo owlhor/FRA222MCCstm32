@@ -65,8 +65,6 @@
 /* Private variables ---------------------------------------------------------*/
  I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c3;
-DMA_HandleTypeDef hdma_i2c3_rx;
-DMA_HandleTypeDef hdma_i2c3_tx;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim4;
@@ -645,12 +643,6 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
-  /* DMA1_Stream1_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
-  /* DMA1_Stream4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
   /* DMA1_Stream5_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
@@ -1030,11 +1022,231 @@ void All_mode_UARTUI()
 
 		case 1:					// Check if mode 1 - 14 or not
 			NameM = (DataIn & 0b00001111); // 15
-			if (NameM >= 1 && NameM <= 14){ chkM = 2;}
+			if (NameM >= 1 && NameM <= 14){
+				chkM = 2;
+				switch (NameM){			// 14Mode work State
+				case 1:			// Check
+					if (dataFN == 2){
+						dataF1 = DataIn;
+					}
+					if(dataFN == 3){
+						dataF2 = DataIn;
+					}
+					chksum = DataIn;
+					chksum2 = ~(StartM + dataF1 + dataF2);
+					if (chksum == chksum2){
+						//M_state = 1;
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 0b0010:			// MCU Connect ,2 byte DataFrame 1
+					chksum = DataIn;
+					chksum1 = ~(StartM);	// Check condition from manual
+					if (chksum == chksum1){	// Transmit back ack1
+						//M_state = 2;
+						/// Add work here///////////
+												///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+
+					break;
+				case 0b0011:			// MCU DisConnect ,2 byte DataFrame 1
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 3;
+						/// Add work here///////////
+						///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 4:			// Set Angular Velocity
+					if (dataFN == 2){
+						dataF1 = DataIn;
+					}
+					if(dataFN == 3){
+						dataF2 = DataIn;
+					}
+					chksum = DataIn;
+					chksum2 = ~(StartM + dataF1 + dataF2);
+					if (chksum == chksum2){
+						//M_state = 4;
+						/// Add work here///////////
+												///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 5:			// Set Angular Position
+					if (dataFN == 2){
+						dataF1 = DataIn;
+					}
+					if(dataFN == 3){
+						dataF2 = DataIn;
+					}
+					chksum = DataIn;
+					chksum2 = ~(StartM + dataF1 + dataF2);
+					if (chksum == chksum2){
+						//M_state = 5;
+						/// Add work here///////////
+												///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 6:			// Set goal single station
+					if (dataFN == 2){
+						dataF1 = DataIn;
+					}
+					if(dataFN == 3){
+						dataF2 = DataIn;
+					}
+					chksum = DataIn;
+					chksum2 = ~(StartM + dataF1 + dataF2);
+					if (chksum == chksum2){
+						//M_state = 6;
+						/// Add work here///////////
+												///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 7:			//set Goal multiple station
+					if (dataFN == 2){
+						Nstation = DataIn;
+					}
+					if (dataFN < Nstation + 3){
+						if (dataFN == countN + 3){
+							dataFSum += DataIn;
+							countN += 1;
+						}
+					}
+					chksum = DataIn;
+					chksum3 = ~(StartM + Nstation + dataFSum);
+					if (chksum == chksum3){
+						//M_state = 7;
+						/// Add work here///////////
+													///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
+						chkM = 0;
+						dataFN = 0;
+						countN = 0;
+					}
+					break;
+				case 8:			// Order Go to that position
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 8;
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						//// simulate workload
+						HAL_Delay(1000);
+						/// Add work here///////////
+						///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_f, 2 ,1000);//Fn
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+
+				////////////// Frame 2 ////////////////////////////////////////
+				case 9:			// Request Current Station
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 9;
+						/// Add work here///////////
+						///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 10:	// Request angular position
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 10;
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						/// Add work here///////////
+						///////////////////////////
+
+						//uint16_t angu = BinPosXI * 360 / 1024;
+						//HAL_UART_Transmit(&huart2, (uint16_t*)angu, 2 ,1000);
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+				case 11:		// Request Max Velo
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 11;
+						/// Add work here///////////
+												///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+				case 0b1100:	// 12 Enable end effector
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 12;
+						flag_efftActi = 1;
+
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+
+				case 0b1101:	// 13  Disable end effector
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						//M_state = 13;
+
+						trig_efftRead = 0;
+						flag_efftRead = 0;
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+
+				case 0b1110:	// 14 Set Home
+					chksum = DataIn;
+					chksum1 = ~(StartM);
+					if (chksum == chksum1){
+						M_state = 14;
+						/// Add work here///////////
+						TargetDeg = 0;
+						//// PID and MotDrv to 0
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						chkM = 0;
+						dataFN = 0;
+					}
+					break;
+					} /// End switch NameM
+
+			}
 			else{chkM = 0;}
 			break;
 		///////////////////////// // 14Mode work State //////////////////////////
 		case 2:
+			break;
+
+			/*
 			switch (NameM){			// 14Mode work State
 				case 1:			// Check
 					if (dataFN == 2){
@@ -1249,6 +1461,7 @@ void All_mode_UARTUI()
 					}
 					break;
 			}
+			*/
 	}
 
 }
