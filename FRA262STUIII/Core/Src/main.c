@@ -83,14 +83,15 @@ uint32_t TimeStampGrand = 0;
 uint64_t _micros = 0;
 
 uint8_t counter_e = 0;
-
+static uint8_t flag_LasxTraj = 0; // traject and lasershoot state & Flag
+uint8_t positionlog[10] = {-1};   // position target logger, send to -> TargetDeg
+static uint8_t position_order = 0; // order of positionlog
 //////////////Abs Encoder 10 bit I2C /////////////////////////////
-//uint8_t encResbit = 10;
 uint32_t timeStampSR =0;
 //uint8_t RawEnBitA = 0b0, RawEnBitB = 0b0;
 uint8_t RawEnBitAB[2] = {0b0};
 uint16_t GrayCBitXI = 0b0, BinPosXI = 0b0;
-static uint8_t flag_absenc = 0;
+uint8_t flag_absenc = 0;
 ////////////// velo dma input capture////////////////////
 //DMA Buffer
 uint32_t capturedata[CAPTURENUM] = { 0 };
@@ -100,18 +101,19 @@ int64_t DiffTime[CAPTURENUM-1] = { 0 };
 //Mean difftime
 float MeanTime =0;
 float RoundNum = 0; // num of pulse in 1 min
-
+/*
 uint16_t posSpeedlog[3] = {0};
 float speedsmoothlog[CAPTURENUM] = {0};
 float deltaar = 0;
 float RoundNumnd = 0;
 float RoundNumnd_sm = 0;
 uint64_t timestampve = 0;
+*/
 ////////////PWM & Motor Driver/////////////////////////////////////////
 uint16_t PWMOut = 5000; // dytycycle = x/10000 % ,TIM4 PB6
 uint32_t timestampPWM = 0;
 uint8_t mot_dirctn = 0;
-
+uint16_t pscalr = 0;
 ///////// PID cat cat /////////////////////////////////////////////
 uint8_t bluecounter = 0;
 
@@ -140,8 +142,7 @@ float Derivate;
 // Regis 0x34 : Work (31sec)
 // Regis 0x56 : Stop (1sec)
 // Regis 0x78 : wait new (- sec)
-//static enum {ef_INIT,ef_addr,ef_addr_wait,} efftState = ef_INIT;
-//uint8_t addr_effct = ADDR_EFFT;
+
 uint8_t efft_status = 0;
 uint8_t flag_efftActi = 0;
 uint8_t flag_efftRead = 0;
@@ -158,8 +159,9 @@ uint8_t Posdata;
 //int Posdata_o = 0;
 int DataIn;
 uint8_t M_state = 0;
-//uint8_t N_state = 0;
+uint8_t N_state = 0;
 
+uint8_t chkStart;
 uint8_t chkM = 0;   // Check state before work
 uint8_t StartM;		// 14 work State
 
@@ -182,28 +184,31 @@ uint8_t DataNew;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
 static void MX_DMA_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM11_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_I2C3_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 void IOExpenderInit();
 uint16_t GraytoBinario(uint16_t grayx,uint8_t numbit);
-void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB);
+//void AbsEncI2CRead(uint8_t *RawRA, uint8_t *RawRB);
 void AbsEncI2CReadx(uint8_t *RawRAB);
-void encoderSpeedReaderCycle();
+//void encoderSpeedReaderCycle();
 
 void GrandStatumix();
-void Speedsmoothfunc(float inpdat);
+void LaserTrajex_workflow();
+void ResetParam();
+//void Speedsmoothfunc(float inpdat);
 void PIDzero();
 void MotDrvCytron();
 void Efft_activate();
 void Efft_read(uint8_t *Rddata);
 
 void All_mode_UARTUI();
+//void All_mode();
 void UARTRecieveIT();
 uint64_t micros();
 
@@ -242,13 +247,13 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART2_UART_Init();
   MX_DMA_Init();
   MX_I2C1_Init();
   MX_TIM11_Init();
   MX_TIM2_Init();
   MX_TIM4_Init();
   MX_I2C3_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   	HAL_TIM_Base_Start_IT(&htim11); // micro timer
     HAL_TIM_Base_Start(&htim2); // Speed
@@ -260,7 +265,7 @@ int main(void)
     HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
 
     //MCP23017 setting init
-    HAL_Delay(100);
+    HAL_Delay(50);
     IOExpenderInit();
   /* USER CODE END 2 */
 
@@ -272,25 +277,26 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 	      ///// IT test
-	 HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-
+	 //HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+/*
 	  	  ///// GrandState ///////////////////
 	  	  //if(micros() - TimeStampGrand >= 1000){
 	  		//TimeStampGrand = micros();
-
 	  	  //}
+*/
 	  	  // Encoder I2CRead
 	  	  if (micros()-timeStampSR >= 1000)      // don't use 1
 	  	          {
 	  	              timeStampSR = micros();           //set new time stamp
 	  	              flag_absenc = 1;
+	  	              pwr_sense = HAL_GPIO_ReadPin(Pwr_Sense_GPIO_Port, Pwr_Sense_Pin);
 	  	              GrandStatumix();
 	  	          }
 	  	  AbsEncI2CReadx(RawEnBitAB);
-	  	  encoderSpeedReaderCycle();
-	  	  pwr_sense = HAL_GPIO_ReadPin(Pwr_Sense_GPIO_Port, Pwr_Sense_Pin);
+	  	  //encoderSpeedReaderCycle();
 
 	  	  ///////////////////////// speed measyre////////
+	  	  /*
 	  	if(micros() - timestampve >= 10000){
 	  			  timestampve = micros();
 	  			  posSpeedlog[1] = posSpeedlog[0];
@@ -299,17 +305,19 @@ int main(void)
 	  			  RoundNumnd = deltaar*100.0*60.0;
 	  			  Speedsmoothfunc(RoundNumnd);
 	  		 }
-
+	   	   */
 	  	  ///////////////////// 2KHz change PWM PB6////////////////////
 	  	  if(micros() - timestampPWM >= 500){
 	  		  	  timestampPWM = micros(); // stamp
-	  	  		  __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, PWMOut);
+	  	  		  __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, PWMOut); // dutycycle
+	  	  		  //__HAL_TIM_SET_PRESCALER(&htim4, pscalr); // Set freq of pwm
 	  	  		  //ADC_Target = ADCFeedx[1].datt;
 	  	  		if (mot_dirctn == 0){
 	  	  		HAL_GPIO_WritePin(Mot_dir_GPIO_Port, Mot_dir_Pin, GPIO_PIN_RESET);
 	  	  		}else{
 	  	  		HAL_GPIO_WritePin(Mot_dir_GPIO_Port, Mot_dir_Pin, GPIO_PIN_SET);
 	  	  		}
+
 	  	  	  }
 
 	  	 if (grandState ==  work){
@@ -321,18 +329,20 @@ int main(void)
 	  	 Efft_activate(); // Activate by flag_efftActi = 1;
 	  	 Efft_read(&efft_status);
 	  	 //// trig_efftRead up for 10 times afrer shoot / trig at shoot state
-	  	 if(trig_efftRead != 0 && micros() - timestamp_efft >= 500000){
+	  	 if(trig_efftRead != 0 && micros() - timestamp_efft >= 50000){
 	  		 timestamp_efft = micros();
 	  		 flag_efftRead = 1;
 	  		 trig_efftRead++;
-	  	 }if(trig_efftRead >= 12){
+
+	  	 }
+	  	 //// disable this when run with laserwork
+	  	 if(trig_efftRead >= 12){
 	  		 trig_efftRead = 0;
-	  	 	 flag_efftRead = 0;
+	  	 	 //flag_efftRead = 0;
 	  		 } // read xx times
 
 	  	 ////////// UART UI Base System //////////////
-	  	UARTRecieveIT();
-
+	  	 UARTRecieveIT();
 
   }
   /* USER CODE END 3 */
@@ -752,14 +762,13 @@ void GrandStatumix(){
 
 	case work:
 		HAL_GPIO_WritePin(PLamp_Blue_GPIO_Port, PLamp_Blue_Pin, GPIO_PIN_SET);
-
-	// transfer to while
+		LaserTrajex_workflow();
 
 		if (pwr_sense == 1){
 			grandState = emer;
 			u_contr = 0;}
 		if (stop_sense == 0){
-			PWMOut = 0;
+			//PWMOut = 0;
 			grandState = stopnd;
 			u_contr = 0;}
 	break;
@@ -787,7 +796,8 @@ void GrandStatumix(){
 		break;
 
 	case emer:
-		PWMOut = 0;
+		ResetParam();
+		// Reset every variables at control
 		if (pwr_sense == 0){
 			grandState = Ready;
 			HAL_Delay(100);
@@ -795,6 +805,63 @@ void GrandStatumix(){
 		}
 	break;
 	}
+}
+
+void LaserTrajex_workflow(){ // 1, n loop go to shoot laser run
+	// -1 means no position value
+	if (TargetDeg == -1){flag_LasxTraj = 0;}
+
+	switch(flag_LasxTraj){
+	default:
+	case 0: // wait go flag
+		////////// raise flag to 1 if need to drive the state
+
+		if (grandState == work){ //flag_LasxTraj != 0 ||
+			flag_LasxTraj = 1;
+			TargetDeg = positionlog[position_order];
+		}
+		break;
+	case 1: // traject
+		PIDzero();
+		MotDrvCytron();
+		//////// raise flag to 2 and flag_efftActi = 1; if reach the target the position
+		if(ErrPos[0] < 2){
+			flag_efftActi = 1;
+			PWMOut = 0;
+			flag_LasxTraj = 2;
+		}
+		break;
+	case 2: // Laserwork
+		trig_efftRead = 1;
+
+		if(efft_status == 0x78){ // if laser finished work
+			trig_efftRead = 0;
+			position_order++; // go to next obtained position
+
+			if (positionlog[position_order] == -1){
+				//Real end, reset all position parameter
+				// back to ready
+				flag_LasxTraj = 0;
+				ResetParam();
+				grandState = Ready;
+				}
+			else {
+				TargetDeg = positionlog[position_order];
+				flag_LasxTraj = 1;
+			} // continue next pos if have
+		}
+		break;
+	}
+}
+
+void ResetParam(){
+	// Reset every variables at control
+	// reset position buffer
+	PWMOut = 0;
+	for(int i = 0; i <= position_order; i++){
+		positionlog[position_order] = -1;
+	}
+	position_order = 0;
 }
 ////////// Absolute Encoder ////////////////////////////////////////////
 uint16_t GraytoBinario(uint16_t grayx,uint8_t numbit){ // numbit=10
@@ -819,6 +886,7 @@ uint16_t GraytoBinario(uint16_t grayx,uint8_t numbit){ // numbit=10
     return binaryout;
 }
 
+/*
 void encoderSpeedReaderCycle() {
 	// re code using position dif time
 	//get DMA Position form number of data
@@ -843,6 +911,7 @@ void encoderSpeedReaderCycle() {
 
 }
 
+
 void Speedsmoothfunc(float inpdat){
 	//static uint8_t scc 0;
 	for(int j = CAPTURENUM-1; j >= 0;j--){
@@ -859,7 +928,7 @@ void Speedsmoothfunc(float inpdat){
 	}
 	RoundNumnd_sm =  summa / (CAPTURENUM-errcut);
 }
-
+*/
 ///////////////////// PID Zero /////////////////////////////
 void PIDzero(){
 	CrrntTime = micros();
@@ -886,11 +955,12 @@ void MotDrvCytron(){
 	else if(u_contr > 0) {mot_dirctn = 1;}
 	else{PWMOut = 0;}
 
+
 	// speed
 	PWMOut= (int)fabsf(u_contr); // Absolute int
-	if(PWMOut> 4000){PWMOut = 4000;} // saturate 50% gear 1:6 - 120rpm => 10rpm
+	if(PWMOut > 5000){PWMOut = 5000;} // saturate 50% gear 1:6 - 120rpm => 10rpm
 	if(PWMOut < 1600 && fabsf(ErrPos[0]) >= 4){PWMOut = 1600;} //pvnt too low pwm that can't drive mot
-	//if(ErrPos[0] < 2){PWMOut = 0;}
+	if(ErrPos[0] < 2){PWMOut = 0;}
 }
 
 /////////////////////Abs Encoder I2C////////////////////////////////////////////
@@ -1007,6 +1077,7 @@ void Efft_read(uint8_t *Rddata){
 
 }
 /////////////////UART UI Base System ////////////////////////////
+
 void All_mode_UARTUI()
 {
 	// DataIn = 1 byte Data from UART Recieve
@@ -1015,239 +1086,21 @@ void All_mode_UARTUI()
 		case 0: 				// Check start INIT
 			StartM = DataIn;    // 	Use in Checksum Frame 3
 			uint8_t chkStart = DataIn >> 4;
-			if (chkStart == 0b1001){ // 9
+			if (chkStart == 9){ // 9 0b1001
 				chkM = 1;
 			}else{chkM = 0;}
 			break;
 
 		case 1:					// Check if mode 1 - 14 or not
-			NameM = (DataIn & 0b00001111); // 15
+			NameM = (DataIn & 15); // 0b00001111
 			if (NameM >= 1 && NameM <= 14){
 				chkM = 2;
-				switch (NameM){			// 14Mode work State
-				case 1:			// Check
-					if (dataFN == 2){
-						dataF1 = DataIn;
-					}
-					if(dataFN == 3){
-						dataF2 = DataIn;
-					}
-					chksum = DataIn;
-					chksum2 = ~(StartM + dataF1 + dataF2);
-					if (chksum == chksum2){
-						//M_state = 1;
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
-						chkM = 0;
-						dataFN = 0;
-					}
-					break;
-				case 0b0010:			// MCU Connect ,2 byte DataFrame 1
-					chksum = DataIn;
-					chksum1 = ~(StartM);	// Check condition from manual
-					if (chksum == chksum1){	// Transmit back ack1
-						//M_state = 2;
-						/// Add work here///////////
-												///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
-						chkM = 0;
-						dataFN = 0;
-					}
-
-					break;
-				case 0b0011:			// MCU DisConnect ,2 byte DataFrame 1
-					chksum = DataIn;
-					chksum1 = ~(StartM);
-					if (chksum == chksum1){
-						//M_state = 3;
-						/// Add work here///////////
-						///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
-						chkM = 0;
-						dataFN = 0;
-					}
-					break;
-				case 4:			// Set Angular Velocity
-					if (dataFN == 2){
-						dataF1 = DataIn;
-					}
-					if(dataFN == 3){
-						dataF2 = DataIn;
-					}
-					chksum = DataIn;
-					chksum2 = ~(StartM + dataF1 + dataF2);
-					if (chksum == chksum2){
-						//M_state = 4;
-						/// Add work here///////////
-												///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
-						chkM = 0;
-						dataFN = 0;
-					}
-					break;
-				case 5:			// Set Angular Position
-					if (dataFN == 2){
-						dataF1 = DataIn;
-					}
-					if(dataFN == 3){
-						dataF2 = DataIn;
-					}
-					chksum = DataIn;
-					chksum2 = ~(StartM + dataF1 + dataF2);
-					if (chksum == chksum2){
-						//M_state = 5;
-						/// Add work here///////////
-												///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
-						chkM = 0;
-						dataFN = 0;
-					}
-					break;
-				case 6:			// Set goal single station
-					if (dataFN == 2){
-						dataF1 = DataIn;
-					}
-					if(dataFN == 3){
-						dataF2 = DataIn;
-					}
-					chksum = DataIn;
-					chksum2 = ~(StartM + dataF1 + dataF2);
-					if (chksum == chksum2){
-						//M_state = 6;
-						/// Add work here///////////
-												///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
-						chkM = 0;
-						dataFN = 0;
-					}
-					break;
-				case 7:			//set Goal multiple station
-					if (dataFN == 2){
-						Nstation = DataIn;
-					}
-					if (dataFN < Nstation + 3){
-						if (dataFN == countN + 3){
-							dataFSum += DataIn;
-							countN += 1;
-						}
-					}
-					chksum = DataIn;
-					chksum3 = ~(StartM + Nstation + dataFSum);
-					if (chksum == chksum3){
-						//M_state = 7;
-						/// Add work here///////////
-													///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
-						chkM = 0;
-						dataFN = 0;
-						countN = 0;
-					}
-					break;
-				case 8:			// Order Go to that position
-					chksum = DataIn;
-					chksum1 = ~(StartM);
-					if (chksum == chksum1){
-						//M_state = 8;
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
-						//// simulate workload
-						HAL_Delay(1000);
-						/// Add work here///////////
-						///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_f, 2 ,1000);//Fn
-						chkM = 0;
-						dataFN = 0;
-					}
-					break;
-
-				////////////// Frame 2 ////////////////////////////////////////
-				case 9:			// Request Current Station
-					chksum = DataIn;
-					chksum1 = ~(StartM);
-					if (chksum == chksum1){
-						//M_state = 9;
-						/// Add work here///////////
-						///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
-						chkM = 0;
-						dataFN = 0;
-					}
-					break;
-				case 10:	// Request angular position
-					chksum = DataIn;
-					chksum1 = ~(StartM);
-					if (chksum == chksum1){
-						//M_state = 10;
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
-						/// Add work here///////////
-						///////////////////////////
-
-						//uint16_t angu = BinPosXI * 360 / 1024;
-						//HAL_UART_Transmit(&huart2, (uint16_t*)angu, 2 ,1000);
-						chkM = 0;
-						dataFN = 0;
-					}
-					break;
-				case 11:		// Request Max Velo
-					chksum = DataIn;
-					chksum1 = ~(StartM);
-					if (chksum == chksum1){
-						//M_state = 11;
-						/// Add work here///////////
-												///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
-						chkM = 0;
-						dataFN = 0;
-					}
-				case 0b1100:	// 12 Enable end effector
-					chksum = DataIn;
-					chksum1 = ~(StartM);
-					if (chksum == chksum1){
-						//M_state = 12;
-						flag_efftActi = 1;
-
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
-						chkM = 0;
-						dataFN = 0;
-					}
-					break;
-
-				case 0b1101:	// 13  Disable end effector
-					chksum = DataIn;
-					chksum1 = ~(StartM);
-					if (chksum == chksum1){
-						//M_state = 13;
-
-						trig_efftRead = 0;
-						flag_efftRead = 0;
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
-						chkM = 0;
-						dataFN = 0;
-					}
-					break;
-
-				case 0b1110:	// 14 Set Home
-					chksum = DataIn;
-					chksum1 = ~(StartM);
-					if (chksum == chksum1){
-						M_state = 14;
-						/// Add work here///////////
-						TargetDeg = 0;
-						//// PID and MotDrv to 0
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
-						chkM = 0;
-						dataFN = 0;
-					}
-					break;
-					} /// End switch NameM
-
 			}
 			else{chkM = 0;}
 			break;
 		///////////////////////// // 14Mode work State //////////////////////////
 		case 2:
-			break;
-
-			/*
-			switch (NameM){			// 14Mode work State
+		switch (NameM){			// 14Mode work State
 				case 1:			// Check
 					if (dataFN == 2){
 						dataF1 = DataIn;
@@ -1259,7 +1112,7 @@ void All_mode_UARTUI()
 					chksum2 = ~(StartM + dataF1 + dataF2);
 					if (chksum == chksum2){
 						//M_state = 1;
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100); //Xu
 						chkM = 0;
 						dataFN = 0;
 					}
@@ -1270,8 +1123,8 @@ void All_mode_UARTUI()
 					if (chksum == chksum1){	// Transmit back ack1
 						//M_state = 2;
 						/// Add work here///////////
-												///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100); //Xu
 						chkM = 0;
 						dataFN = 0;
 					}
@@ -1284,7 +1137,7 @@ void All_mode_UARTUI()
 						//M_state = 3;
 						/// Add work here///////////
 						///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100); //Xu
 						chkM = 0;
 						dataFN = 0;
 					}
@@ -1302,7 +1155,7 @@ void All_mode_UARTUI()
 						//M_state = 4;
 						/// Add work here///////////
 												///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
+					HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100);
 						chkM = 0;
 						dataFN = 0;
 					}
@@ -1319,8 +1172,8 @@ void All_mode_UARTUI()
 					if (chksum == chksum2){
 						//M_state = 5;
 						/// Add work here///////////
-												///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
+						///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100);
 						chkM = 0;
 						dataFN = 0;
 					}
@@ -1338,7 +1191,7 @@ void All_mode_UARTUI()
 						//M_state = 6;
 						/// Add work here///////////
 												///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100);
 						chkM = 0;
 						dataFN = 0;
 					}
@@ -1358,8 +1211,8 @@ void All_mode_UARTUI()
 					if (chksum == chksum3){
 						//M_state = 7;
 						/// Add work here///////////
-													///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000);
+						///////////////////////////
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100);
 						chkM = 0;
 						dataFN = 0;
 						countN = 0;
@@ -1370,12 +1223,13 @@ void All_mode_UARTUI()
 					chksum1 = ~(StartM);
 					if (chksum == chksum1){
 						//M_state = 8;
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100); //Xu
 						//// simulate workload
 						HAL_Delay(1000);
+						grandState = work;
 						/// Add work here///////////
 						///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_f, 2 ,1000);//Fn
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_f, 2 ,100);//Fn
 						chkM = 0;
 						dataFN = 0;
 					}
@@ -1389,7 +1243,7 @@ void All_mode_UARTUI()
 						//M_state = 9;
 						/// Add work here///////////
 						///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100); //Xu
 						chkM = 0;
 						dataFN = 0;
 					}
@@ -1399,12 +1253,12 @@ void All_mode_UARTUI()
 					chksum1 = ~(StartM);
 					if (chksum == chksum1){
 						//M_state = 10;
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100); //Xu
 						/// Add work here///////////
 						///////////////////////////
 
 						//uint16_t angu = BinPosXI * 360 / 1024;
-						//HAL_UART_Transmit(&huart2, (uint16_t*)angu, 2 ,1000);
+						//HAL_UART_Transmit(&huart2, (uint16_t*)angu, 2 ,100);
 						chkM = 0;
 						dataFN = 0;
 					}
@@ -1416,24 +1270,24 @@ void All_mode_UARTUI()
 						//M_state = 11;
 						/// Add work here///////////
 												///////////////////////////
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100); //Xu
 						chkM = 0;
 						dataFN = 0;
 					}
-				case 12:	// Enable end effector
+				case 12:	// 12 Enable end effector
 					chksum = DataIn;
 					chksum1 = ~(StartM);
 					if (chksum == chksum1){
 						//M_state = 12;
 						flag_efftActi = 1;
 
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100); //Xu
 						chkM = 0;
 						dataFN = 0;
 					}
 					break;
 
-				case 13:	// Disable end effector
+				case 13:	// 13  Disable end effector
 					chksum = DataIn;
 					chksum1 = ~(StartM);
 					if (chksum == chksum1){
@@ -1441,28 +1295,28 @@ void All_mode_UARTUI()
 
 						trig_efftRead = 0;
 						flag_efftRead = 0;
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100); //Xu
 						chkM = 0;
 						dataFN = 0;
 					}
 					break;
 
-				case 14:	// Set Home
+				case 14:	// 14 Set Home
 					chksum = DataIn;
 					chksum1 = ~(StartM);
 					if (chksum == chksum1){
-						M_state = 14;
+						//M_state = 14;
 						/// Add work here///////////
 						TargetDeg = 0;
 						//// PID and MotDrv to 0
-						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,1000); //Xu
+						HAL_UART_Transmit(&huart2, (uint8_t*)temp_s, 2 ,100); //Xu
 						chkM = 0;
 						dataFN = 0;
 					}
 					break;
-			}
-			*/
-	}
+					} /// End switch NameM
+			break;
+	}//end sw chkM
 
 }
 
@@ -1479,6 +1333,7 @@ void UARTRecieveIT()
 		Posdata = dataPos;
 		dataFN += 1;
 	}
+	All_mode_UARTUI();
 	All_mode_UARTUI();
 
 }
@@ -1514,6 +1369,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 			TargetDeg = 0;
 		}
 }
+
 ///////////////////////////////////// micro timer////////////////////////////////////
 uint64_t micros()
 {return _micros + htim11.Instance->CNT;}
