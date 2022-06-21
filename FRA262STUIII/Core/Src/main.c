@@ -52,7 +52,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define CAPTURENUM 16 // sample data array size for velo
-#define POSOFFSET  -442 // angle zero offset abs enc
+#define POSOFFSET  -833 // angle zero offset abs enc
 #define ADDR_EFFT 0b01000110 // End Effector Addr 0x23 0010 0011
 #define ADDR_IOXT 0b01000000 // datasheet p15
 /* USER CODE END PD */
@@ -63,7 +63,7 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
- I2C_HandleTypeDef hi2c1;
+I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c3;
 
 TIM_HandleTypeDef htim2;
@@ -307,6 +307,7 @@ int main(void)
 	  		 }
 	   	   */
 	  	  ///////////////////// 2KHz change PWM PB6////////////////////
+
 	  	  if(micros() - timestampPWM >= 500){
 	  		  	  timestampPWM = micros(); // stamp
 	  	  		  __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, PWMOut); // dutycycle
@@ -762,7 +763,7 @@ void GrandStatumix(){
 
 	case work:
 		HAL_GPIO_WritePin(PLamp_Blue_GPIO_Port, PLamp_Blue_Pin, GPIO_PIN_SET);
-		LaserTrajex_workflow();
+		//LaserTrajex_workflow();
 
 		if (pwr_sense == 1){
 			grandState = emer;
