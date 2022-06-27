@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "tresta.cpp"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,7 +42,8 @@
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+uint16_t counttera = 0;
+uint16_t countterb = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -65,7 +66,7 @@ static void MX_USART2_UART_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	int a;
+	//int a;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -152,6 +153,11 @@ int main(void)
 	  uint8_t duty = 1;
 	  if(HAL_GetTick() - timestp >= duty){ //every 1 m sec
 		  timestp = HAL_GetTick(); // stamp time
+
+		  counttera++;
+		  counttera %= 1023;
+		  countterb = Gray(counttera);
+
 		  if (counter >= period){
 			  counter = 0;
 		  }
@@ -179,7 +185,7 @@ int main(void)
 
 
 
-	/* USER CODE END WHILE */
+    /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 

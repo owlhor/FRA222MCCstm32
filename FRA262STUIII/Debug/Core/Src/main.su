@@ -3,39 +3,40 @@ c:\st\stm32cubeide_1.8.0\stm32cubeide\plugins\com.st.stm32cube.ide.mcu.externalt
 c:\st\stm32cubeide_1.8.0\stm32cubeide\plugins\com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.10.3-2021.10.win32_1.0.0.202111181127\tools\arm-none-eabi\include\c++\10.3.1\new:174:33:void* operator new(std::size_t, void*)	16	static
 c:\st\stm32cubeide_1.8.0\stm32cubeide\plugins\com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.10.3-2021.10.win32_1.0.0.202111181127\tools\bin\../lib/gcc/arm-none-eabi/10.3.1/../../../../arm-none-eabi/include/c++/10.3.1/arm-none-eabi/thumb/v7e-m+fp/hard/bits/gthr-default.h:229:1:int __gthread_key_delete(__gthread_key_t)	16	static
 D:/github_desktop/FRA222MCCstm32/FRA262STUIII/eigen-3.4.0/Eigen/src/Core/util/IndexedViewHelper.h:137:16:Eigen::internal::all_t::all_t()	16	static
-../Core/Src/main.cpp:337:6:void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef*, uint16_t)	24	static
-../Core/Src/main.cpp:382:6:void All_mode_UARTUI()	16	static
+../Core/Src/main.cpp:324:6:void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef*, uint16_t)	24	static
+../Core/Src/main.cpp:369:6:void All_mode_UARTUI()	16	static
+../Core/Src/main.cpp:547:6:void xu_Uart()	8	static
 c:\st\stm32cubeide_1.8.0\stm32cubeide\plugins\com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.10.3-2021.10.win32_1.0.0.202111181127\tools\arm-none-eabi\include\c++\10.3.1\cmath:415:5:constexpr typename __gnu_cxx::__promote_2<_Tp, _Up>::__type std::pow(_Tp, _Up) [with _Tp = int; _Up = int]	24	static
-../Core/Src/main.cpp:551:5:int main()	440	static
-../Core/Src/main.cpp:713:6:void SystemClock_Config()	88	static
-../Core/Src/main.cpp:760:13:void MX_I2C1_Init()	8	static
-../Core/Src/main.cpp:794:13:void MX_I2C3_Init()	8	static
-../Core/Src/main.cpp:828:13:void MX_TIM2_Init()	48	static
-../Core/Src/main.cpp:886:13:void MX_TIM4_Init()	64	static
-../Core/Src/main.cpp:945:13:void MX_TIM11_Init()	8	static
-../Core/Src/main.cpp:976:13:void MX_USART2_UART_Init()	8	static
-../Core/Src/main.cpp:1007:13:void MX_DMA_Init()	16	static
-../Core/Src/main.cpp:1031:13:void MX_GPIO_Init()	48	static
-../Core/Src/main.cpp:1104:6:void GrandStatumix()	8	static
-../Core/Src/main.cpp:1186:6:void LaserTrajex_workflow()	8	static
-../Core/Src/main.cpp:1233:6:void ResetParam()	16	static
-../Core/Src/main.cpp:1246:6:void Trajectory()	24	static
-../Core/Src/main.cpp:1293:6:void Unwrapping()	24	static
-../Core/Src/main.cpp:1315:6:void diffvelo()	24	static
-../Core/Src/main.cpp:1333:6:void Kalmanfilter()	368	static
-../Core/Src/main.cpp:1360:6:void PIDPosition()	24	static
-../Core/Src/main.cpp:1385:6:void PIDVelocity()	24	static
-../Core/Src/main.cpp:1407:6:void controlloop()	8	static
-../Core/Src/main.cpp:1421:6:void MotDrvCytron()	4	static
-../Core/Src/main.cpp:1438:10:uint16_t GraytoBinario(uint16_t, uint8_t)	32	static
-../Core/Src/main.cpp:1460:6:void IOExpenderInit()	24	static
-../Core/Src/main.cpp:1480:6:void AbsEncI2CReadx(uint8_t*)	32	static
-../Core/Src/main.cpp:1510:6:void Efft_activate()	24	static
-../Core/Src/main.cpp:1536:6:void Efft_read(uint8_t*)	32	static
-../Core/Src/main.cpp:1819:6:void HAL_GPIO_EXTI_Callback(uint16_t)	16	static
-../Core/Src/main.cpp:1851:10:uint64_t micros()	12	static
-../Core/Src/main.cpp:1853:6:void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef*)	24	static
-../Core/Src/main.cpp:1864:6:void Error_Handler()	4	static,ignoring_inline_asm
+../Core/Src/main.cpp:557:5:int main()	464	static
+../Core/Src/main.cpp:739:6:void SystemClock_Config()	88	static
+../Core/Src/main.cpp:786:13:void MX_I2C1_Init()	8	static
+../Core/Src/main.cpp:820:13:void MX_I2C3_Init()	8	static
+../Core/Src/main.cpp:854:13:void MX_TIM2_Init()	48	static
+../Core/Src/main.cpp:912:13:void MX_TIM4_Init()	64	static
+../Core/Src/main.cpp:971:13:void MX_TIM11_Init()	8	static
+../Core/Src/main.cpp:1002:13:void MX_USART2_UART_Init()	8	static
+../Core/Src/main.cpp:1033:13:void MX_DMA_Init()	16	static
+../Core/Src/main.cpp:1057:13:void MX_GPIO_Init()	48	static
+../Core/Src/main.cpp:1130:6:void GrandStatumix()	8	static
+../Core/Src/main.cpp:1237:6:void LaserTrajex_workflow()	8	static
+../Core/Src/main.cpp:1295:6:void ResetParam()	16	static
+../Core/Src/main.cpp:1308:6:void Trajectory()	40	static
+../Core/Src/main.cpp:1365:6:void Unwrapping()	24	static
+../Core/Src/main.cpp:1387:6:void diffvelo()	24	static
+../Core/Src/main.cpp:1405:6:void Kalmanfilter()	368	static
+../Core/Src/main.cpp:1432:6:void PIDPosition()	24	static
+../Core/Src/main.cpp:1457:6:void PIDVelocity()	24	static
+../Core/Src/main.cpp:1479:6:void controlloop()	8	static
+../Core/Src/main.cpp:1494:6:void MotDrvCytron()	4	static
+../Core/Src/main.cpp:1511:10:uint16_t GraytoBinario(uint16_t, uint8_t)	32	static
+../Core/Src/main.cpp:1533:6:void IOExpenderInit()	24	static
+../Core/Src/main.cpp:1553:6:void AbsEncI2CReadx(uint8_t*)	32	static
+../Core/Src/main.cpp:1585:6:void Efft_activate()	24	static
+../Core/Src/main.cpp:1612:6:void Efft_read(uint8_t*)	24	static
+../Core/Src/main.cpp:1651:6:void HAL_GPIO_EXTI_Callback(uint16_t)	16	static
+../Core/Src/main.cpp:1684:10:uint64_t micros()	12	static
+../Core/Src/main.cpp:1686:6:void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef*)	24	static
+../Core/Src/main.cpp:1697:6:void Error_Handler()	4	static,ignoring_inline_asm
 D:/github_desktop/FRA222MCCstm32/FRA262STUIII/eigen-3.4.0/Eigen/src/Core/util/SymbolicIndex.h:219:3:Eigen::symbolic::SymbolExpr<tag>::SymbolExpr() [with tag = Eigen::internal::symbolic_last_tag]	16	static
 D:/github_desktop/FRA222MCCstm32/FRA262STUIII/eigen-3.4.0/Eigen/src/Core/util/IntegralConstant.h:56:3:Eigen::internal::FixedInt<N>::FixedInt() [with int N = 1]	16	static
 D:/github_desktop/FRA222MCCstm32/FRA262STUIII/eigen-3.4.0/Eigen/src/Core/util/IntegralConstant.h:82:12:Eigen::internal::FixedInt<N> Eigen::internal::FixedInt<N>::operator()() const [with int N = 1]	16	static
@@ -1869,5 +1870,5 @@ D:/github_desktop/FRA222MCCstm32/FRA262STUIII/eigen-3.4.0/Eigen/src/Core/MapBase
 D:/github_desktop/FRA222MCCstm32/FRA262STUIII/eigen-3.4.0/Eigen/src/Core/Block.h:391:11:constexpr Eigen::Index Eigen::internal::BlockImpl_dense<XprType, BlockRows, BlockCols, InnerPanel, true>::innerStride() const [with XprType = const Eigen::Matrix<float, 1, 3>; int BlockRows = 1; int BlockCols = 3; bool InnerPanel = true]	16	static
 D:/github_desktop/FRA222MCCstm32/FRA262STUIII/eigen-3.4.0/Eigen/src/Core/Block.h:400:11:constexpr Eigen::Index Eigen::internal::BlockImpl_dense<XprType, BlockRows, BlockCols, InnerPanel, true>::outerStride() const [with XprType = const Eigen::Matrix<float, 1, 3>; int BlockRows = 1; int BlockCols = 3; bool InnerPanel = true]	16	static
 D:/github_desktop/FRA222MCCstm32/FRA262STUIII/eigen-3.4.0/Eigen/src/Core/CoreEvaluators.h:121:41:Eigen::internal::evaluator_base<ExpressionType>::evaluator_base() [with ExpressionType = Eigen::Block<const Eigen::Matrix<float, 1, 3>, 1, 3, true>]	16	static
-../Core/Src/main.cpp:1873:1:void __static_initialization_and_destruction_0(int, int)	24	static
-../Core/Src/main.cpp:1873:1:cpp)	8	static
+../Core/Src/main.cpp:1706:1:void __static_initialization_and_destruction_0(int, int)	24	static
+../Core/Src/main.cpp:1706:1:cpp)	8	static
