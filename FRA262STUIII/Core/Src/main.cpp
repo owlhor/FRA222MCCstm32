@@ -65,13 +65,17 @@ using namespace Eigen;
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-//#define CAPTURENUM 16 // sample data array size for velo
+
 #define POSOFFSET  -833 // angle zero offset abs enc
+#define NumPosDataSetDef 3  // DataSet Select
+
 #define ADDR_EFFT 0b01000110 // End Effector Addr 0x23 0010 0011
 #define ADDR_IOXT 0b01000000 // datasheet p15
 
 #define RxBuf_SIZE   32
 #define MainBuf_SIZE 32
+#define PosBufSize 20
+
 
 #define Dt 0.001
 /* USER CODE END PD */
@@ -82,13 +86,12 @@ using namespace Eigen;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-I2C_HandleTypeDef hi2c1;
+ I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c3;
 
-TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim4;
+TIM_HandleTypeDef htim10;
 TIM_HandleTypeDef htim11;
-DMA_HandleTypeDef hdma_tim2_ch1;
 
 UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart2_rx;
@@ -96,20 +99,31 @@ DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
 //===============================================================================
+///////////// [[DATASET]] /////////////////////////////
+float rawPossw_1[PosBufSize] = {0.0, 1.0, 0.5, 1.2, 2.4, 1.1, 2.3, 1.3, 0.8, 8.5};
+float rawPossw_2[PosBufSize] = {0.0, 1.0, 0.0, 1.0, 0.0, 1.0};
+float rawPossw_3[PosBufSize] = {0.0, 1.0, 2.0, 3.0 ,2.5 ,1.5};
+
 ///////////////// [Grand State] ///////////// [Grand State] //////////////////////
 static enum {Ready, work, stop, emer ,stopnd, SetZeroGr} grandState = Ready;
 uint8_t pwr_sense = 0;
 uint8_t stop_sense = 0;
 uint32_t TimeStampGrand = 0;
-uint64_t _micros = 0;
 uint8_t flag_finishTra = 0;
+
+uint64_t _micros = 0;
+uint32_t _millis = 0;
+
 //uint8_t counter_e = 0;
 static uint8_t flag_LasxTraj = 0; // traject and lasershoot state & Flag
-int8_t positionlog[10] = {-1};   // position target logger, send to -> TargetDeg
 static uint8_t position_order = 0; // order of positionlog
+// position target logger, send to -> FinalPosition
+float positionlog[PosBufSize] = {-1.0};
+
+float PosDataSet[PosBufSize] = {0};  // Dataset in rad , Select at switch<->Define
 
 ////////////// [Abs Encoder 10 bit I2C] /////////////////////////////
-uint32_t timeStampSR =0;
+uint32_t timeStampSR = 0;
 //uint8_t RawEnBitA = 0b0, RawEnBitB = 0b0;
 uint8_t RawEnBitAB[2] = {0b0};
 uint16_t GrayCBitXI = 0b0, BinPosXI = 0b0;
@@ -117,7 +131,7 @@ uint8_t flag_absenc = 0;
 uint16_t encdummbuf = 0;
 
 //////////// [PWM & Motor Driver] /////////////////////////////////////////
-uint16_t PWMOut = 5000; // dytycycle = x/10000 % ,TIM4 PB6
+uint16_t PWMOut = 0; // dytycycle = x/10000 % ,TIM4 PB6
 uint32_t timestampPWM = 0;
 uint8_t mot_dirctn = 0;
 //uint16_t pscalr = 0;
@@ -175,7 +189,7 @@ float P_0=0;
 float Pn=0;
 float P_n=0;
 float RawData=0;
-float P_max=1024*0.006136;
+float P_max = 1024*0.006136;
 float e = 0.65*1024*0.006136;
 float OutUnwrap = 0;
 float CurrentEn = 0;  // Position in rad (conv from BinPosXI)
@@ -235,6 +249,7 @@ uint8_t flag_efftRead = 0;
 uint8_t trig_efftRead = 0;
 uint64_t timestamp_efft = 0;
 
+uint64_t timeout_efft = 0;
 //////////////// [UART UI Base System] ////////////////////////////
 
 uint8_t RxBuf[RxBuf_SIZE];      // input buffer
@@ -248,14 +263,22 @@ uint8_t temp_f_ack2[2] = {0x46, 0x6E};  // Acknowledge#2 "Fn" 0x466E
 //////[UART UI] transmit parameter (dummy)
 uint8_t Req_sta[4] = {153,0,5,97}; //  station 5
 uint8_t Req_AngPosi[4] = {154,61,18,22};// 15634 , 1.5634 rad 90 degree
+int DataProtocol_AngPosi;
 //uint8_t Req_AngPosi[4] = {154,122,183,52};// 31415 , 3.1415 rad 180 degree
 uint8_t Req_MaxVelo[4] = {155,0,127,229};// 5 rpm
+float DataProtocol_Velo;
 //// [UART UI] Receive parameter
 uint8_t Set_AngVelo[2];
+float DataProtocol_SetVelo;
 uint8_t Set_AngPosi[2];
-uint8_t Set_Goal_1Sta[2];
-uint8_t Set_Goal_nSta[10];
+int DataProtocol_SetAngPosi;
+uint8_t Set_Goal_1Sta[2];				// raw index from UART single
+uint8_t Goal_nSta[8];                   // raw index (uncompressed)
+uint8_t Set_Goal_nSta[PosBufSize];		// raw index from UART multi
+int Set1_Sta;
+
 //// [UART UI] process param
+
 uint16_t datasize_uart = 0;
 uint8_t chkStart;
 uint8_t chkStart2;
@@ -281,10 +304,10 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM11_Init(void);
-static void MX_TIM2_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_I2C3_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_TIM10_Init(void);
 /* USER CODE BEGIN PFP */
 ///////////// [Abs Encoder]
 
@@ -315,6 +338,7 @@ void All_mode_UARTUI();
 void xu_Uart();
 
 uint64_t micros();
+uint32_t millis();
 
 /* USER CODE END PFP */
 
@@ -368,6 +392,11 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 
 void All_mode_UARTUI()
 {
+	// mode 7 operator
+	uint8_t yur;
+	uint8_t zur;
+	uint8_t kur; // counter
+
 	// NameM => 15 mode
 		switch (NameM){
 		////==============[Test Command]===========
@@ -412,6 +441,8 @@ void All_mode_UARTUI()
 					chksum2 = ~(StartM + dataF1 + dataF2);
 				if (chksum == chksum2){
 					M_state = 4;
+					DataProtocol_SetVelo = Set_AngVelo[1];
+					Velocity = (DataProtocol_SetVelo * 10)/255;
 					//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
 					xu_Uart();
 				}
@@ -426,6 +457,10 @@ void All_mode_UARTUI()
 					chksum2 = ~(StartM + dataF1 + dataF2);
 				if (chksum == chksum2){
 					M_state = 5;
+
+					DataProtocol_SetAngPosi = (Set_AngPosi[0]*256) + Set_AngPosi[1];
+					//positionlog[0] = (DataProtocol_SetAngPosi / (3.14 * 10000) * 180);
+					positionlog[0] = (float)(DataProtocol_SetAngPosi / 10000.0);
 					//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
 					xu_Uart();
 				}
@@ -440,27 +475,53 @@ void All_mode_UARTUI()
 					chksum2 = ~(StartM + dataF1 + dataF2);
 				if (chksum == chksum2){
 					M_state = 6;
+
+					///////// Load 1 station Data /////////////
+					positionlog[0] = PosDataSet[Set_Goal_1Sta[1]];
+					Set1_Sta = Set_Goal_1Sta[1];
 					//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
+
 					xu_Uart();
 				}
 				break;
 		////==============[Goal n station]===========
 			case 7:
 				Nstation = MainBuf[(newPos_uart - datasize_uart)+1];
-				for(int i=2; i < Nstation+2; i++ ){
-					dataFSum += MainBuf[newPos_uart-i];
-					Set_Goal_nSta[i-2] = MainBuf[newPos_uart-i];
+				yur = Nstation;
+				zur = ( yur / 2 ) + yur % 2;
+				kur = 0; // counter
+
+				for(int i = 0; i < zur; i++ ){
+					dataFSum += MainBuf[oldPos_uart + (i+2)];
+					Goal_nSta[i] = MainBuf[oldPos_uart + (i+2)];
 				}
+				for(int x = 1; x < Nstation+1; x++){
+                    if(x % 2 == 1){
+                        Set_Goal_nSta[x-1] = (Goal_nSta[kur] % 16);
+                    }else if(x % 2 == 0){
+                        Set_Goal_nSta[x-1] = (Goal_nSta[kur] / 16);
+                        kur++;
+                    }
+                }
+
 				chksum = MainBuf[newPos_uart-1];
 				chksum3 = ~(StartM + Nstation + dataFSum);
 				if (chksum == chksum3){
 					M_state = 7;
+
+					/////////// Load n station-> positionlog  //////////
+					//for(int j = 0; j <= len(PosDataSet); j++){
+					for(int j = 0; j <= Nstation; j++){
+						positionlog[j] = PosDataSet[Set_Goal_nSta[j]];
+						//Set_Goal_nSta -> raw index from UART
+					}
+
 					//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
 					dataFSum = 0;
 					xu_Uart();
 				}
 				break;
-		////==============[Go to Goal station]===========
+		////==============[Go to Goal station Order to Work]===========
 			case 8: //10011000 01100111
 				chksum = MainBuf[newPos_uart-1];
 				chksum1 = ~(StartM);
@@ -468,7 +529,11 @@ void All_mode_UARTUI()
 					M_state = 8;
 					//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
 					xu_Uart();
-					HAL_UART_Transmit(&huart2, (uint8_t*)temp_f_ack2, 2 ,1000);
+
+		///////// Order to Work !!! ///
+					grandState = work;
+					//if(grandState == Ready){grandState = work;}
+					//HAL_UART_Transmit(&huart2, (uint8_t*)temp_f_ack2, 2 ,1000);
 				}
 				break;
 		////==============[Request Current station]===========
@@ -479,6 +544,9 @@ void All_mode_UARTUI()
 					M_state = 9;
 					//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
 					xu_Uart();
+					//Req_sta[1] = 0;
+					//Req_sta[2] = x;
+					//Req_sta[3] = ~(Req_sta[0] + Req_sta[1] + Req_sta[2]);
 					HAL_UART_Transmit(&huart2, (uint8_t*)Req_sta, 4 ,1000);
 				}
 				break;
@@ -490,6 +558,10 @@ void All_mode_UARTUI()
 					M_state = 10;
 					//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
 					xu_Uart();
+					DataProtocol_AngPosi = (KalP * 10000);
+					Req_AngPosi[1] = (DataProtocol_AngPosi / 256);
+					Req_AngPosi[2] = (DataProtocol_AngPosi % 256);
+					Req_AngPosi[3] = ~(Req_AngPosi[0] + Req_AngPosi[1] + Req_AngPosi[2]);
 					HAL_UART_Transmit(&huart2, (uint8_t*)Req_AngPosi, 4 ,1000);
 				}
 				break;
@@ -501,6 +573,10 @@ void All_mode_UARTUI()
 					M_state = 11;
 					//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
 					xu_Uart();
+					DataProtocol_Velo = (KalV/(2 * 3.14)) * 60;
+					Req_MaxVelo[1] = 0;
+					Req_MaxVelo[2] = (DataProtocol_Velo * 255) / 10;
+					Req_MaxVelo[3] = ~(Req_MaxVelo[0] + Req_MaxVelo[1] + Req_MaxVelo[2]);
 					HAL_UART_Transmit(&huart2, (uint8_t*)Req_MaxVelo, 4 ,1000);
 				}
 				break;
@@ -537,7 +613,8 @@ void All_mode_UARTUI()
 				if (chksum == chksum1){
 					M_state = 14;
 					//act as set zero interrupt
-					TargetDeg = 0;
+					Finalposition = 0;
+					grandState = SetZeroGr;
 					xu_Uart();
 				}
 				break;
@@ -612,13 +689,14 @@ int main(void)
   MX_DMA_Init();
   MX_I2C1_Init();
   MX_TIM11_Init();
-  MX_TIM2_Init();
   MX_TIM4_Init();
   MX_I2C3_Init();
   MX_USART2_UART_Init();
+  MX_TIM10_Init();
   /* USER CODE BEGIN 2 */
+    HAL_TIM_Base_Start_IT(&htim10); // milli timer
   	HAL_TIM_Base_Start_IT(&htim11); // micro timer
-    HAL_TIM_Base_Start(&htim2); // Speed
+    //HAL_TIM_Base_Start(&htim2); // Speed
     //HAL_TIM_IC_Start_DMA(&htim2, TIM_CHANNEL_1, (uint32_t*) &capturedata,CAPTURENUM);
 
     //PWM Test
@@ -629,6 +707,30 @@ int main(void)
     HAL_UARTEx_ReceiveToIdle_DMA(&huart2, RxBuf, RxBuf_SIZE);
     __HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
 
+    ////// ===== Select DataPosition Dataset =================
+    static uint8_t NumPosDataSetx  = 0 + NumPosDataSetDef;
+    switch(NumPosDataSetx){
+
+    case 1:
+    	for(int t = 0;t <= PosBufSize ;t++){
+		PosDataSet[t] = rawPossw_1[t];
+		} break;
+
+    case 2:
+    	for(int t = 0;t <= PosBufSize ;t++){
+		PosDataSet[t] = rawPossw_2[t];
+		} break;
+
+    case 3:
+    	for(int t = 0;t <= PosBufSize ;t++){
+    	PosDataSet[t] = rawPossw_3[t];
+    	}break;
+    }
+
+    ////============position buffer===================
+    for(int i = 0; i <= PosBufSize; i++){
+    		positionlog[i] = -1.0;
+    	}
     //MCP23017 setting init
     HAL_Delay(50);
     IOExpenderInit();
@@ -646,7 +748,7 @@ int main(void)
 
 	  	  ///// GrandState ///////////////////
 
-	  	  if(micros() - TimeStampGrand >= 100){
+	  	  if(micros() - TimeStampGrand >= 1000){
 	  		TimeStampGrand = micros();
 	  		 GrandStatumix();
 	  		////// encoder dummy///////
@@ -716,17 +818,16 @@ int main(void)
 	  	 Efft_activate(); // Activate by flag_efftActi = 1;
 	  	 Efft_read(&efft_status);
 	  	 //// trig_efftRead up for 10 times afrer shoot / trig at shoot state
-	  	 if(trig_efftRead != 0 && micros() - timestamp_efft >= 200000){
-	  		 timestamp_efft = micros();
+	  	 if(trig_efftRead != 0 && millis() - timestamp_efft >= 500){
+	  		 timestamp_efft = millis();
 	  		 flag_efftRead = 1;
 	  		 trig_efftRead++;
 
 	  	 }
-	  	 //// disable this when run with laserwork
-	  	 if(trig_efftRead >= 40 || efft_status == 0x78 ){//
-	  		 trig_efftRead = 0;
-	  	 	 //flag_efftRead = 0;
-	  		 } // read xx times
+	  	//// disable this when run with laserwork
+	  	// if(efft_status == 0x78 ){//trig_efftRead >= 40 ||
+	  	//	 trig_efftRead = 0;
+	  	//	 } // read xx times
 
   }
   /* USER CODE END 3 */
@@ -847,64 +948,6 @@ static void MX_I2C3_Init(void)
 }
 
 /**
-  * @brief TIM2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM2_Init(void)
-{
-
-  /* USER CODE BEGIN TIM2_Init 0 */
-
-  /* USER CODE END TIM2_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_IC_InitTypeDef sConfigIC = {0};
-
-  /* USER CODE BEGIN TIM2_Init 1 */
-
-  /* USER CODE END TIM2_Init 1 */
-  htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 99;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_IC_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
-  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
-  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 0;
-  if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM2_Init 2 */
-
-  /* USER CODE END TIM2_Init 2 */
-
-}
-
-/**
   * @brief TIM4 Initialization Function
   * @param None
   * @retval None
@@ -960,6 +1003,37 @@ static void MX_TIM4_Init(void)
 
   /* USER CODE END TIM4_Init 2 */
   HAL_TIM_MspPostInit(&htim4);
+
+}
+
+/**
+  * @brief TIM10 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM10_Init(void)
+{
+
+  /* USER CODE BEGIN TIM10_Init 0 */
+
+  /* USER CODE END TIM10_Init 0 */
+
+  /* USER CODE BEGIN TIM10_Init 1 */
+
+  /* USER CODE END TIM10_Init 1 */
+  htim10.Instance = TIM10;
+  htim10.Init.Prescaler = 99;
+  htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim10.Init.Period = 999;
+  htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim10.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim10) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM10_Init 2 */
+
+  /* USER CODE END TIM10_Init 2 */
 
 }
 
@@ -1037,9 +1111,6 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
-  /* DMA1_Stream5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
   /* DMA1_Stream6_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
@@ -1076,6 +1147,14 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : TIM2_CH1_VINCp_Pin */
+  GPIO_InitStruct.Pin = TIM2_CH1_VINCp_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
+  HAL_GPIO_Init(TIM2_CH1_VINCp_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
@@ -1145,7 +1224,7 @@ void GrandStatumix(){
 	default:
 	case Ready:
 		HAL_GPIO_WritePin(PLamp_Green_GPIO_Port, PLamp_Green_Pin, GPIO_PIN_SET);
-		//PWMOut = 1200;
+		PWMOut = 1200;
 		Unwrapping();
 		Kalmanfilter();
 		//diffvelo();
@@ -1153,7 +1232,7 @@ void GrandStatumix(){
 		if (pwr_sense == 1){grandState = emer;}
 		if (stop_sense == 0){grandState = stop;}
 		/// [From UART] run when get {HOME} , {RUN}
-		if (bluecounter != 0){grandState = work;} // can go work from ready only
+		//if (bluecounter != 0){grandState = work;} // can go work from ready only
 	break;
 
 	case work:
@@ -1173,7 +1252,9 @@ void GrandStatumix(){
 
 	case SetZeroGr:
 		HAL_GPIO_WritePin(PLamp_Blue_GPIO_Port, PLamp_Blue_Pin, GPIO_PIN_SET);
-
+		HAL_Delay(4000); // Simulate workload
+		flag_finishTra = 1;
+		/*
 		Unwrapping();
 
 		 if(flagNewpos==0){
@@ -1185,7 +1266,7 @@ void GrandStatumix(){
 		Trajectory();
 		Kalmanfilter();
 		controlloop();
-
+*/
 		if (flag_finishTra == 1 || BinPosXI == 0){
 			flag_finishTra = 0;
 			grandState = Ready;
@@ -1201,6 +1282,8 @@ void GrandStatumix(){
 
 		if (stop_sense == 1){
 			grandState = Ready;
+			IOExpenderInit();
+			HAL_Delay(100);
 			//== rotation change for dummy test
 			//mot_dirctn++;
 			//mot_dirctn%=2;
@@ -1225,12 +1308,11 @@ void GrandStatumix(){
 		// Reset every variables at control
 		if (pwr_sense == 0){
 			grandState = Ready;
+			HAL_Delay(250); // wait for emer release shock power
 			IOExpenderInit();
-			HAL_Delay(100);
+
 		}
 	break;
-
-
 	}
 }
 
@@ -1251,8 +1333,8 @@ void LaserTrajex_workflow(){ // 1, n loop go to shoot laser run
 	case 1: //-------------traject-----
 		//====flag_LasxTraj will trig trajex in while;
 		//////// raise flag to 2 and flag_efftActi = 1; if reach the target the position
- 		 Unwrapping();
-
+/*
+		Unwrapping();
 		 if(flagNewpos==0){
 			Currentpos = CurrentEn;
 			//Finalposition = 300*0.006136; // Put goal position here in rad
@@ -1262,23 +1344,30 @@ void LaserTrajex_workflow(){ // 1, n loop go to shoot laser run
 		Trajectory();
 		Kalmanfilter();
 		controlloop();
+*/
+		HAL_Delay(2500); // Simulate workload
+		flag_finishTra = 1;
 
 		if(flag_finishTra == 1){
 			flag_finishTra = 0;
 			flag_LasxTraj = 2;
 			flag_efftActi = 1;
+
+			timeout_efft = millis();
 		}
 		break;
-	case 2: //---------------Laserwork------
+	case 2: //---------------Laserwork--------------
 		trig_efftRead = 1;
 
-		if(efft_status == 0x78){ // if laser finished work
+		if(efft_status == 0x78 || millis() - timeout_efft >= 6000){ // if laser finished work or tomeout
+			efft_status = 0x00;
 			trig_efftRead = 0;
 			position_order++; // go to next obtained position
 
 			if (positionlog[position_order] == -1){
 				//Real end, reset all position parameter
 				// back to ready
+				HAL_UART_Transmit(&huart2, (uint8_t*)temp_f_ack2, 2, 100);
 				flag_LasxTraj = 0;
 				ResetParam();
 				grandState = Ready;
@@ -1297,9 +1386,13 @@ void ResetParam(){
 	// reset position buffer
 	PWMOut = 0;
 	for(int i = 0; i <= position_order; i++){
-			positionlog[i] = -1;
+			positionlog[i] = -1.0;
 		}
 	position_order = 0;
+	flag_LasxTraj = 0;
+	trig_efftRead = 0;
+	bluecounter = 0;
+	efft_status = 0x00;
 	//Integral = 0;
 	//u_contr = 0;
 }
@@ -1532,7 +1625,7 @@ uint16_t GraytoBinario(uint16_t grayx,uint8_t numbit){ // numbit=10
 
 void IOExpenderInit() {// call when start system
 	//Init All// setting from datasheet p17 table 3.5
-	static uint8_t Setting[0x16] = {
+	static uint8_t Xetting[0x16] = {
 			0b11111111, // IODIRA 1 = in/2=0ut
 			0b11111111, // IODIRB
 			0b11111111, // IPOLA  1 = invert / 0  nonINV
@@ -1546,7 +1639,7 @@ void IOExpenderInit() {// call when start system
 			0x00, // 0x13 GPIOB
 			0x00, 0x00 };
 	// OLATB -> Out data for pinB
-	HAL_I2C_Mem_Write(&hi2c1, ADDR_IOXT, 0x00, I2C_MEMADD_SIZE_8BIT, Setting,
+	HAL_I2C_Mem_Write(&hi2c1, ADDR_IOXT, 0x00, I2C_MEMADD_SIZE_8BIT, Xetting,
 			0x16, 100);
 }
 
@@ -1663,13 +1756,17 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 		PWMOut = 0;
 		bluecounter = 0;
 		if(grandState == work){grandState = stopnd;}
-		//else{grandState = stop;}
+		else{grandState = stop;}
 
 		}
 	//=========// work Blue button //=========//
 	if(GPIO_Pin == GPIO_PIN_13){
 		bluecounter++;
-		flag_efftActi = 1;
+		for(uint8_t i = 0; i <= sizeof(PosDataSet); i++){
+		    		positionlog[i] = PosDataSet[i];
+		    	}
+		if(grandState == Ready){grandState = work;}
+		//flag_efftActi = 1;
 		//trig_efftRead = 1;
 	}
 
@@ -1683,9 +1780,14 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 ///////////////////////////////////// micro timer////////////////////////////////////
 uint64_t micros()
 {return _micros + htim11.Instance->CNT;}
+uint32_t millis()
+{return _millis;}// + htim10.Instance->CNT
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
  if(htim == &htim11)
  {_micros += 65535;}
+ if(htim == &htim10)
+ {_millis++;}
 }
 
 /* USER CODE END 4 */

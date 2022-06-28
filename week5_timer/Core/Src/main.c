@@ -43,6 +43,7 @@ ADC_HandleTypeDef hadc1;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim10;
 TIM_HandleTypeDef htim11;
 
 UART_HandleTypeDef huart2;
@@ -62,8 +63,10 @@ ADCStruct ADCFeedx[2] = {0}; // 0 A0, 1 A1
 uint16_t PWMOut = 3000; // dytycycle = x/10000 % ,TIM1
 
 uint64_t _micro = 0;
+uint64_t _millis = 0;
 uint64_t TimeOutputLoop = 0; // pwm frequency update, 2kHz
 
+uint64_t millisec = 0;
 // PID parameter
 int16_t Err[2] = {0}; // 0 is err, 1 is last err
 int16_t Integral = 0;
@@ -80,8 +83,10 @@ static void MX_ADC1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM11_Init(void);
+static void MX_TIM10_Init(void);
 /* USER CODE BEGIN PFP */
 uint64_t micros();
+uint64_t millis();
 void ADCConfigINIT();
 /* USER CODE END PFP */
 
@@ -123,6 +128,7 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM3_Init();
   MX_TIM11_Init();
+  MX_TIM10_Init();
   /* USER CODE BEGIN 2 */
   ///////////////////////////////////////////////////////////
   // start ADC, TIMER
@@ -135,7 +141,7 @@ int main(void)
 
   //timer for micros()
   HAL_TIM_Base_Start_IT(&htim11);
-
+  HAL_TIM_Base_Start_IT(&htim10);
   //ADCConfigINIT();// multichannel ADC
 
   /* USER CODE END 2 */
@@ -150,6 +156,7 @@ int main(void)
 
 	  //ADCReadUpdate();
 
+	  	  millisec = millis();
 	  //2KHz loop use timer
 	  if(micros() - TimeOutputLoop > 500){
 		  TimeOutputLoop = micros(); // stamp
@@ -398,6 +405,37 @@ static void MX_TIM3_Init(void)
 }
 
 /**
+  * @brief TIM10 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM10_Init(void)
+{
+
+  /* USER CODE BEGIN TIM10_Init 0 */
+
+  /* USER CODE END TIM10_Init 0 */
+
+  /* USER CODE BEGIN TIM10_Init 1 */
+
+  /* USER CODE END TIM10_Init 1 */
+  htim10.Instance = TIM10;
+  htim10.Init.Prescaler = 99;
+  htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim10.Init.Period = 999;
+  htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim10.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim10) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM10_Init 2 */
+
+  /* USER CODE END TIM10_Init 2 */
+
+}
+
+/**
   * @brief TIM11 Initialization Function
   * @param None
   * @retval None
@@ -538,10 +576,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	if(htim == &htim11){
 		_micro += 65535;
 	}
+	if(htim == &htim10){
+		_millis++;
+	}
 }
 
 uint64_t micros() {
 	return _micro + htim11.Instance->CNT;
+}
+uint64_t millis() {
+	return _millis;// + htim10.Instance->CNT
 }
 /* USER CODE END 4 */
 
