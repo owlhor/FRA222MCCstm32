@@ -67,8 +67,8 @@ using namespace Eigen;
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define POSOFFSET  -846 // angle zero offset abs enc
-#define NumPosDataSetDef 1  // DataSet Select
+#define POSOFFSET  53 // angle zero offset abs enc
+#define NumPosDataSetDef 3  // DataSet Select
 
 #define ADDR_EFFT 0b01000110 // End Effector Addr 0x23 0010 0011
 #define ADDR_IOXT 0b01000000 // datasheet p15
@@ -101,10 +101,12 @@ DMA_HandleTypeDef hdma_usart2_tx;
 /* USER CODE BEGIN PV */
 //===============================================================================
 ///////////// [[DATASET]] /////////////////////////////
+static uint8_t NumPosDataSetx  = 0 + NumPosDataSetDef;
 float rawPossw_1[PosBufSize] = {0.0, 1.0, 0.5, 1.2, 2.4, 1.1, 2.3, 1.3, 0.8, 8.5};
 float rawPossw_2[PosBufSize] = {0.0, 1.0, 0.0, 1.0, 0.0, 1.0};
 float rawPossw_3[PosBufSize] = {0.0, 0.78, 1.57, 2.35, 3.14 ,3.92 ,4.712};
 
+uint16_t PosoffsetMon = 0; // send to CubeMonitor
 ///////////////// [Grand State] ///////////// [Grand State] //////////////////////
 static enum {Ready, work, stop, emer ,stopnd, SetZeroGr} grandState = Ready;
 uint8_t pwr_sense = 0;
@@ -157,7 +159,7 @@ uint32_t TimeStampTraject = 0;
 
 uint32_t TimeStampKalman = 0;
 uint64_t runtime = 0;
-float Q1 = 2000;
+float Q1 = 4000;
 
 Matrix <float,3,3> A ;
 Matrix <float,3,3> P ;
@@ -210,9 +212,13 @@ float ErrPos[2] = {0};  // error
 float ufromposit = 0 ;
 float sumError = 0 ;
 
-float K_P = 0;
-float K_I = 0;
-float K_D = 0;
+float K_P = 0.02;
+float K_I = 0.0;
+float K_D = 0.0;
+
+//float K_P = 4;
+//float K_I = 0.006;
+//float K_D = 2;
 
 float Propo;
 float Integral;
@@ -220,9 +226,13 @@ float Derivate;
 /////////////////////////// [PID Velo] //////////////////////////
 float ErrVelo[3] = {0};  // error
 
-float K_P_V = 2.3;
-float K_I_V = 0.32225;
-float K_D_V = 20;
+//float K_P_V = 2.1225;
+//float K_I_V = 0.32222225;
+//float K_D_V = 40;
+
+float K_P_V = 2.0;
+float K_I_V = 0.215;
+float K_D_V = 1.65;
 
 float Vcontr[2] = {0};
 float SumAll = 0;
@@ -618,15 +628,18 @@ void All_mode_UARTUI()
 					xu_Uart();
 				}
 				break;
-		////==============[Set Home]================
+		////==============[Set Home Zero]================
 			case 14: //10011110 01100001
 				chksum = MainBuf[newPos_uart-1];
 				chksum1 = ~(StartM);
 				if (chksum == chksum1){
 					M_state = 14;
 					//act as set zero interrupt
-					Finalposition = 0.0;
+					position_order = 0;
+					positionlog[position_order] = 0.0;
+					Velocity = 9.0;
 					grandState = SetZeroGr;
+
 					xu_Uart();
 				}
 				break;
@@ -635,7 +648,11 @@ void All_mode_UARTUI()
 
 void xu_Uart(){
 	//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
-	HAL_UART_Transmit(&huart2, (uint8_t*)temp_s_ack1, 2 ,1000); //Xu
+	HAL_UART_Transmit(&huart2, (uint8_t*)temp_s_ack1, 2 , 200); //Xu
+}
+
+void fn_Uart(){
+	HAL_UART_Transmit(&huart2, (uint8_t*)temp_f_ack2, 2, 100);
 }
 
 /* USER CODE END 0 */
@@ -669,7 +686,7 @@ int main(void)
 			 0 , 1 , 0 ,
 			 0 , 0 , 1 ;
 
-		R << pow(10, -1); ;
+		R << pow(10, 0);
 
 		D << 0 ;
 
@@ -721,7 +738,6 @@ int main(void)
     __HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
 
     ////// ===== Select DataPosition Dataset =================
-    static uint8_t NumPosDataSetx  = 0 + NumPosDataSetDef;
     switch(NumPosDataSetx){
 
     case 1:
@@ -740,6 +756,7 @@ int main(void)
     	}break;
     }
 
+    PosoffsetMon = 0 + POSOFFSET; // for send to cubeMon
     ////============position buffer Set Default===================
     //for(int f = 0; f <= PosBufSize; f++){
     //		positionlog[f] = -1.0;
@@ -773,7 +790,7 @@ int main(void)
 
 	  	  // Encoder I2CRead
 
-	  	  if (micros()-timeStampSR >= 3000)      // don't use 1
+	  	  if (micros()-timeStampSR >= 10000)      // don't use 1
 	  	          {
 	  	              timeStampSR = micros();           //set new time stamp
 	  	              flag_absenc = 1;
@@ -1272,25 +1289,35 @@ void GrandStatumix(){
 
 	case SetZeroGr:
 		HAL_GPIO_WritePin(PLamp_Blue_GPIO_Port, PLamp_Blue_Pin, GPIO_PIN_SET);
-		HAL_Delay(4000); // Simulate workload
-		flag_finishTra = 1;
 
-//		Unwrapping();
-//
-//		 if(flagNewpos==0){
-//			Currentpos = CurrentEn;
-//			Finalposition = 0; // Put goal position here in rad
-//			Distance = Finalposition - Currentpos;
-//			flagNewpos = 1;
-//		 }
-//		Trajectory();
-//		Kalmanfilter();
-//		controlloop();
+		Unwrapping();
 
-		if (flag_finishTra == 1 || BinPosXI == 0){
+		 if(flagNewpos==0){
+			Currentpos = CurrentEn;
+			//Finalposition = 0; // Put goal position here in rad
+			Distance = Finalposition - Currentpos;
+			flagNewpos = 1;
+		 }
+		Trajectory();
+		Kalmanfilter();
+		controlloop();
+//		HAL_Delay(4000); // Simulate workload
+//		flag_finishTra = 1;
+
+
+		if (flag_finishTra == 1){
 			flag_finishTra = 0;
+			//HAL_UART_Transmit(&huart2, (uint8_t*)temp_f_ack2, 2, 100);
+			fn_Uart();
 			grandState = Ready;
+			ResetParam();
 		}
+		if (pwr_sense == 1){grandState = emer;}
+		if (stop_sense == 0){
+					PWMOut = 0;
+					grandState = stopnd;
+					u_contr = 0;
+				}
 	break;
 
 	case stop:
@@ -1305,8 +1332,7 @@ void GrandStatumix(){
 			IOExpenderInit();
 			HAL_Delay(100);
 			//== rotation change for dummy test
-			//mot_dirctn++;
-			//mot_dirctn%=2;
+			//mot_dirctn++; mot_dirctn%=2;
 		}
 	break;
 
@@ -1355,7 +1381,7 @@ void LaserTrajex_workflow(){ // 1, n loop go to shoot laser run
 		//////// raise flag to 2 and flag_efftActi = 1; if reach the target the position
 
 		Unwrapping();
-		 if(flagNewpos==0){
+		 if(flagNewpos == 0){
 			Currentpos = CurrentEn;
 			//Finalposition = 300*0.006136; // Put goal position here in rad
 			Distance = Finalposition - Currentpos;
@@ -1380,7 +1406,10 @@ void LaserTrajex_workflow(){ // 1, n loop go to shoot laser run
 	case 2: //---------------Laserwork--------------
 		trig_efftRead = 1;
 
-		if(efft_status == 0x78 || millis() - timeout_efft >= 6000){ // if laser finished work or tomeout
+		// if laser finished work or tomeout and not too fast shift state
+		//if((efft_status == 0x78 || millis() - timeout_efft >= 6000) && millis() - timeout_efft >= 1500){
+		// force encoder to work
+		if(efft_status == 0x78 && millis() - timeout_efft >= 5050){
 			efft_status = 0x00;
 			trig_efftRead = 0;
 			position_order++; // go to next obtained position
@@ -1388,7 +1417,8 @@ void LaserTrajex_workflow(){ // 1, n loop go to shoot laser run
 			if (positionlog[position_order] == -1){
 				//Real end, reset all position parameter
 				// back to ready
-				HAL_UART_Transmit(&huart2, (uint8_t*)temp_f_ack2, 2, 100);
+				//HAL_UART_Transmit(&huart2, (uint8_t*)temp_f_ack2, 2, 100);
+				fn_Uart();
 				flag_LasxTraj = 0;
 				ResetParam();
 				grandState = Ready;
@@ -1413,6 +1443,8 @@ void ResetParam(){
 	flag_LasxTraj = 0;
 	trig_efftRead = 0;
 	bluecounter = 0;
+	Distance = 0;
+	Currentpos = 0;
 	efft_status = 0x00;
 	IOExpenderInit();
 	//Integral = 0;
@@ -1426,17 +1458,8 @@ void Trajectory(){
 		TimeStampTraject = micros();
 	//if(millis() - TimeStampTraject >= 10){
 	//		TimeStampTraject = millis();
-		if (Distance > 0){
-			//Velocity = 1.04719755; // [From UART] Put Max Velo here
-			Acceleration= 0.5;   // recieve frol UART
-			check = 50;
-		}
-		else if(Distance < 0){
-			//Velocity=-1.04719755; // [From UART] Put Max Velo here  (negative)
-			Velocity= -1 * Velocity;
-		    Acceleration= -0.5;   // recieve frol UART (negative)
-		    check = 100;
-		}
+		Acceleration = 0.5;
+
 
 		if (Distance/Velocity > Velocity/Acceleration){
 			Tb = Velocity/Acceleration;
@@ -1472,6 +1495,19 @@ void Trajectory(){
 			ch = 4;
 			}
 
+		if (Distance > 0){
+			//Velocity = 1.04719755; // [From UART] Put Max Velo here
+			//Acceleration= 0.5;   // recieve frol UART
+			check = 50;
+		}
+		else if(Distance < 0){
+			//Velocity=-1.04719755; // [From UART] Put Max Velo here  (negative)
+			//Velocity= -1 * Velocity;
+			OutVelocity = OutVelocity * -1.0;
+			OutPosition = OutPosition * -1.0;
+		    //Acceleration= -0.5;   // recieve frol UART (negative)
+		    check = 100;
+		}
 		TimeinS = TimeinS + Dt;
 		}
 	//OutVelocity = 0.523598775 ;
@@ -1481,7 +1517,7 @@ void Trajectory(){
 //////////////////////// [Unwrapping] ///////////////////////
 void Unwrapping(){
 
-	if(micros() - TimeUnwrap >= 1000){
+	if(micros() - TimeUnwrap >= 10000){
 		TimeUnwrap = micros();
 		Pn = BinPosXI * 0.006136;
 		if(Pn-P_n <= -1*e){
@@ -1605,7 +1641,10 @@ void controlloop(){
 	if( abs( Finalposition - KalP) < 0.005 && KalV < 0.0005){
 		PWMOut = 0;
 		check = 8;
+
+		flagNewpos = 0;
 		flag_finishTra = 1;
+		TimeinS = 0;
 	}
 	else{
 		PIDPosition();
@@ -1698,7 +1737,7 @@ void AbsEncI2CReadx(uint8_t *RawRAB){
 
 		GrayCBitXI = (RawEnBitAB[1] << 8) | RawEnBitAB[0]; // GrayCBitx
 		// 1023- to reverse
-		BinPosXI = 1023 - (GraytoBinario(GrayCBitXI, 10) + POSOFFSET) ;
+		BinPosXI = 1023 - (GraytoBinario(GrayCBitXI, 10) + POSOFFSET) ;//
 		if (BinPosXI >= 1024){BinPosXI %= 1024;}
 
 		flag_absenc = 0;
@@ -1818,14 +1857,26 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 //		    		positionlog[i] = PosDataSet[i];
 //		    	}
 		//if(grandState == Ready){}
-		grandState = work;
+
+		////===== Zero Calibrate Func /////////////
+		if (bluecounter % 2 == 0){
+			PWMOut = 1100;
+			mot_dirctn++; mot_dirctn%=2;
+
+		}else{PWMOut = 0;}
+
+		/// == Manual Work Order ==========
+		//grandState = work;
+
 		//flag_efftActi = 1;
 		//trig_efftRead = 1;
 	}
 
 	//=============// setzero //================//
 		if(GPIO_Pin == GPIO_PIN_2){
-			Finalposition = 0;
+			position_order = 0;
+			positionlog[position_order] = 0.0;
+			Velocity = 9.0;
 			grandState = SetZeroGr;
 		}
 }
