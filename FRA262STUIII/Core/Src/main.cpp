@@ -67,8 +67,8 @@ using namespace Eigen;
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define POSOFFSET  53 // angle zero offset abs enc
-#define NumPosDataSetDef 3  // DataSet Select
+#define POSOFFSET 52 // angle zero offset abs enc
+#define NumPosDataSetDef 1  // DataSet Select
 
 #define ADDR_EFFT 0b01000110 // End Effector Addr 0x23 0010 0011
 #define ADDR_IOXT 0b01000000 // datasheet p15
@@ -101,10 +101,17 @@ DMA_HandleTypeDef hdma_usart2_tx;
 /* USER CODE BEGIN PV */
 //===============================================================================
 ///////////// [[DATASET]] /////////////////////////////
+/*
+ * Set 1 => 45, 90, 135, 180, 225, 270, 315
+ * Set 2 => 0, 355 // worst case 2
+ * Set 3 => n/a
+ * Set 4 => 0, 5, 10, 15, 20, 25, 30, 35, 40  // worst case #1
+ * */
 static uint8_t NumPosDataSetx  = 0 + NumPosDataSetDef;
-float rawPossw_1[PosBufSize] = {0.0, 1.0, 0.5, 1.2, 2.4, 1.1, 2.3, 1.3, 0.8, 8.5};
-float rawPossw_2[PosBufSize] = {0.0, 1.0, 0.0, 1.0, 0.0, 1.0};
-float rawPossw_3[PosBufSize] = {0.0, 0.78, 1.57, 2.35, 3.14 ,3.92 ,4.712};
+float rawPossw_1[PosBufSize] = {0.0, 0.78, 1.57, 2.35, 3.14 ,3.92 ,4.712, 5.497};
+float rawPossw_2[PosBufSize] = {0.0, 0.0, 6.195};
+float rawPossw_3[PosBufSize] = {0.0, 1.0, 0.5, 1.2, 2.4, 1.1, 2.3, 1.3, 0.8, 8.5};
+float rawPossw_4[PosBufSize] = {0.0, 0.00, 0.087, 0.174, 0.261 , 0.349, 0.436, 0.523};
 
 uint16_t PosoffsetMon = 0; // send to CubeMonitor
 ///////////////// [Grand State] ///////////// [Grand State] //////////////////////
@@ -212,13 +219,15 @@ float ErrPos[2] = {0};  // error
 float ufromposit = 0 ;
 float sumError = 0 ;
 
-float K_P = 0.02;
-float K_I = 0.0;
-float K_D = 0.0;
+////// 1/7/65
+float K_P = 0.00175;
+float K_I = 0.0000; // 0.0
+float K_D = 0.0002;    // 0.0
 
 //float K_P = 4;
 //float K_I = 0.006;
 //float K_D = 2;
+
 
 float Propo;
 float Integral;
@@ -230,9 +239,15 @@ float ErrVelo[3] = {0};  // error
 //float K_I_V = 0.32222225;
 //float K_D_V = 40;
 
-float K_P_V = 2.0;
-float K_I_V = 0.215;
-float K_D_V = 1.65;
+////// 1/7/65
+//float K_P_V = 2.0;
+//float K_I_V = 0.215;
+//float K_D_V = 1.65;
+
+////// 1/7/65 18.16
+float K_P_V = 2.000;
+float K_I_V = 0.222;
+float K_D_V = 1.811;
 
 float Vcontr[2] = {0};
 float SumAll = 0;
@@ -1456,8 +1471,7 @@ void Trajectory(){
 
 	if(micros() - TimeStampTraject >= 10000){
 		TimeStampTraject = micros();
-	//if(millis() - TimeStampTraject >= 10){
-	//		TimeStampTraject = millis();
+
 		Acceleration = 0.5;
 
 
@@ -1509,9 +1523,9 @@ void Trajectory(){
 		    check = 100;
 		}
 		TimeinS = TimeinS + Dt;
-		}
-	//OutVelocity = 0.523598775 ;
 
+		//OutVelocity = 0.523598775 ;
+		}
 }
 
 //////////////////////// [Unwrapping] ///////////////////////
@@ -1638,7 +1652,7 @@ void PIDVelocity(){
 
 void controlloop(){
 
-	if( abs( Finalposition - KalP) < 0.005 && KalV < 0.0005){
+	if( abs( Finalposition - KalP) < 0.005 && abs(KalV) < 0.0005){
 		PWMOut = 0;
 		check = 8;
 
@@ -1875,8 +1889,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	//=============// setzero //================//
 		if(GPIO_Pin == GPIO_PIN_2){
 			position_order = 0;
-			positionlog[position_order] = 0.0;
-			Velocity = 9.0;
+			positionlog[position_order] = 0.0122; // 0.000613 - 0.0122 => 1-2/1024
+			Velocity = 7.0;
 			grandState = SetZeroGr;
 		}
 }
