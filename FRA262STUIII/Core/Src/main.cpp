@@ -162,6 +162,11 @@ float Currentpos = 0;
 int flagNewpos = 0;
 uint32_t TimeStampTraject = 0;
 
+float a0 = 0;
+float a3 = 0;
+float a4 = 0;
+float a5 = 0;
+
 /////////////////// [Kalman cat cat] //////////////////////////////
 
 uint32_t TimeStampKalman = 0;
@@ -741,8 +746,6 @@ int main(void)
   /* USER CODE BEGIN 2 */
     HAL_TIM_Base_Start_IT(&htim10); // milli timer
   	HAL_TIM_Base_Start_IT(&htim11); // micro timer
-    //HAL_TIM_Base_Start(&htim2); // Speed
-    //HAL_TIM_IC_Start_DMA(&htim2, TIM_CHANNEL_1, (uint32_t*) &capturedata,CAPTURENUM);
 
     //PWM Test
     HAL_TIM_Base_Start(&htim4);
@@ -768,7 +771,12 @@ int main(void)
     case 3:
     	for(int t = 0;t <= PosBufSize ;t++){
     	PosDataSet[t] = rawPossw_3[t];
-    	}break;
+    	} break;
+
+    case 4:
+		for(int t = 0;t <= PosBufSize ;t++){
+		PosDataSet[t] = rawPossw_4[t];
+		} break;
     }
 
     PosoffsetMon = 0 + POSOFFSET; // for send to cubeMon
@@ -1485,43 +1493,53 @@ void Trajectory(){
 		//TimeinS = _micros/10^6;
 		timeFinal = (4*abs(Velocity)) + ((abs(Distance)-(2*abs(Velocity)*abs(Velocity)))/abs(Velocity));
 
-		if (TimeinS < Tb){
-			OutPosition = (0.5*Acceleration*TimeinS*TimeinS)+Currentpos;
-			OutVelocity = Acceleration*TimeinS;
-			OutAcceleration = Acceleration;
-			ch = 1;
-			}
-		else if(TimeinS < (timeFinal-Tb)){
-			OutPosition = (0.5*Acceleration*(Tb*Tb)) + (Velocity*(TimeinS-Tb))+Currentpos;
-			OutVelocity = Velocity;
-			OutAcceleration = 0;
-			ch = 2;
-			}
-		else if(((timeFinal-Tb) <= TimeinS) && (TimeinS <= timeFinal)){
-			OutPosition = (0.5*Acceleration*(Tb*Tb))+ (Velocity*(timeFinal-(2*Tb)))  + (Velocity*(TimeinS-(timeFinal-Tb))) - (0.5*Acceleration*((TimeinS-(timeFinal-Tb))*(TimeinS-(timeFinal-Tb))))+Currentpos;
-			OutVelocity = Velocity-(Acceleration*(TimeinS-(timeFinal-Tb)));
-			OutAcceleration = -Acceleration;
-			ch = 3;
-			}
-		else if(TimeinS > timeFinal){
-			OutPosition = Distance+Currentpos;
-			OutAcceleration = 0;
-			ch = 4;
-			}
+		a0 = Currentpos;
+		a3 = (1/(2*pow(timeFinal,3)))*(20*Distance);
+		a4 = (1/(2*pow(timeFinal,4)))*(30*(Currentpos-Finalposition));
+		a5 = (1/(2*pow(timeFinal,5)))*(12*Distance);
 
-		if (Distance > 0){
-			//Velocity = 1.04719755; // [From UART] Put Max Velo here
-			//Acceleration= 0.5;   // recieve frol UART
-			check = 50;
-		}
-		else if(Distance < 0){
-			//Velocity=-1.04719755; // [From UART] Put Max Velo here  (negative)
-			//Velocity= -1 * Velocity;
-			OutVelocity = OutVelocity * -1.0;
-			OutPosition = OutPosition * -1.0;
-		    //Acceleration= -0.5;   // recieve frol UART (negative)
-		    check = 100;
-		}
+		OutPosition = a0+(a3*pow(TimeinS,3))+(a4*pow(TimeinS,4))+(a5*pow(TimeinS,5));
+		OutVelocity = (3*a3*pow(TimeinS,2))+(4*a4*pow(TimeinS,3))+(5*a5*pow(TimeinS,4));
+
+//		if (TimeinS < Tb){
+//			OutPosition = (0.5*Acceleration*TimeinS*TimeinS)+Currentpos;
+//			OutVelocity = Acceleration*TimeinS;
+//			OutAcceleration = Acceleration;
+//			ch = 1;
+//			}
+//		else if(TimeinS < (timeFinal-Tb)){
+//			OutPosition = (0.5*Acceleration*(Tb*Tb)) + (Velocity*(TimeinS-Tb))+Currentpos;
+//			OutVelocity = Velocity;
+//			OutAcceleration = 0;
+//			ch = 2;
+//			}
+//		else if(((timeFinal-Tb) <= TimeinS) && (TimeinS <= timeFinal)){
+//			OutPosition = (0.5*Acceleration*(Tb*Tb))+ (Velocity*(timeFinal-(2*Tb)))  + (Velocity*(TimeinS-(timeFinal-Tb))) - (0.5*Acceleration*((TimeinS-(timeFinal-Tb))*(TimeinS-(timeFinal-Tb))))+Currentpos;
+//			OutVelocity = Velocity-(Acceleration*(TimeinS-(timeFinal-Tb)));
+//			OutAcceleration = -Acceleration;
+//			ch = 3;
+//			}
+//		else if(TimeinS > timeFinal){
+//			OutPosition = Distance+Currentpos;
+//			OutAcceleration = 0;
+//			ch = 4;
+//			}
+//
+//		if (Distance > 0){
+//			//Velocity = 1.04719755; // [From UART] Put Max Velo here
+//			//Acceleration= 0.5;   // recieve frol UART
+//			check = 50;
+//		}
+//		else if(Distance < 0){
+//			//Velocity=-1.04719755; // [From UART] Put Max Velo here  (negative)
+//			//Velocity= -1 * Velocity;
+//			OutVelocity = OutVelocity * -1.0;
+//			OutPosition = OutPosition * -1.0;
+//		    //Acceleration= -0.5;   // recieve frol UART (negative)
+//		    check = 100;
+//		}
+
+
 		TimeinS = TimeinS + Dt;
 
 		//OutVelocity = 0.523598775 ;
@@ -1731,7 +1749,7 @@ void IOExpenderInit() {// call when start system
 			0x00, 0x00, 0x00, 0x00,
 			0x00, 0x00, 0x00, 0x00,
 			0x00, // GPPUA
-			0b00111111, // GPPUB Pull up 100k R
+			0x00, // GPPUB Pull up 100k R
 			0x00, 0x00, 0x00, 0x00,
 			0x00, // 0x12 GPIOA
 			0x00, // 0x13 GPIOB
