@@ -67,7 +67,7 @@ using namespace Eigen;
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define POSOFFSET 52 // angle zero offset abs enc
+#define POSOFFSET -100 // angle zero offset abs enc
 #define NumPosDataSetDef 1  // DataSet Select
 
 #define ADDR_EFFT 0b01000110 // End Effector Addr 0x23 0010 0011
@@ -115,7 +115,7 @@ float rawPossw_4[PosBufSize] = {0.0, 0.00, 0.087, 0.174, 0.261 , 0.349, 0.436, 0
 
 uint16_t PosoffsetMon = 0; // send to CubeMonitor
 ///////////////// [Grand State] ///////////// [Grand State] //////////////////////
-static enum {Ready, work, stop, emer ,stopnd, SetZeroGr} grandState = Ready;
+static enum {Ready, work, stop, emer ,stopnd, SetZeroGr, SetZeroBf} grandState = Ready;
 uint8_t pwr_sense = 0;
 uint8_t stop_sense = 0;
 uint32_t TimeStampGrand = 0;
@@ -227,7 +227,7 @@ float sumError = 0 ;
 ////// 1/7/65
 float K_P = 0.00175;
 float K_I = 0.0000; // 0.0
-float K_D = 0.0002;    // 0.0
+float K_D = 0.0003;    // 0.0
 
 //float K_P = 4;
 //float K_I = 0.006;
@@ -240,9 +240,9 @@ float Derivate;
 /////////////////////////// [PID Velo] //////////////////////////
 float ErrVelo[3] = {0};  // error
 
-//float K_P_V = 2.1225;
-//float K_I_V = 0.32222225;
-//float K_D_V = 40;
+float K_P_V = 2.1225;
+float K_I_V = 0.32222225;
+float K_D_V = 40;
 
 ////// 1/7/65
 //float K_P_V = 2.0;
@@ -250,9 +250,9 @@ float ErrVelo[3] = {0};  // error
 //float K_D_V = 1.65;
 
 ////// 1/7/65 18.16
-float K_P_V = 2.000;
-float K_I_V = 0.222;
-float K_D_V = 1.811;
+//float K_P_V = 2.000;
+//float K_I_V = 0.222;
+//float K_D_V = 1.811;
 
 float Vcontr[2] = {0};
 float SumAll = 0;
@@ -277,6 +277,7 @@ uint8_t check=0;
 // Regis 0x78 : wait new (- sec)
 
 uint8_t efft_status = 0; // hex status of end effector
+uint8_t flag_efftDis = 1; // disable end effector shoot when 1
 uint8_t flag_efftActi = 0;
 uint8_t flag_efftRead = 0;
 uint8_t trig_efftRead = 0;
@@ -455,6 +456,10 @@ void All_mode_UARTUI()
 				if (chksum == chksum1){
 					M_state = 2;
 					//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
+
+					// check efft
+					flag_efftActi = 1;
+
 					xu_Uart();
 				}
 				break;
@@ -468,9 +473,10 @@ void All_mode_UARTUI()
 
 					ResetParam();
 					grandState = Ready;
-					PWMOut = 0;
+					HAL_UART_Transmit(&huart2, (uint8_t*)temp_f_ack2, 2, 100);
 
 					xu_Uart();
+
 				}
 				break;
 		////==============[Angular Velo Set]===========
@@ -484,7 +490,8 @@ void All_mode_UARTUI()
 				if (chksum == chksum2){
 					M_state = 4;
 					DataProtocol_SetVelo = Set_AngVelo[1];
-					Velocity = (DataProtocol_SetVelo * 10)/255;
+					//////// RPM to Rad/s => 2PI/60
+					Velocity =((DataProtocol_SetVelo * 10)/255) * (2 * M_PI / 60);
 					//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
 					xu_Uart();
 				}
@@ -628,7 +635,10 @@ void All_mode_UARTUI()
 				chksum1 = ~(StartM);
 				if (chksum == chksum1){
 					M_state = 12;
-					flag_efftActi = 1;
+
+					flag_efftDis = 0;
+
+					//flag_efftActi = 1;
 
 					//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
 					xu_Uart();
@@ -644,6 +654,7 @@ void All_mode_UARTUI()
 					trig_efftRead = 0;
 					flag_efftRead = 0;
 					flag_efftActi = 0;
+					flag_efftDis = 1;
 
 					xu_Uart();
 				}
@@ -655,10 +666,10 @@ void All_mode_UARTUI()
 				if (chksum == chksum1){
 					M_state = 14;
 					//act as set zero interrupt
-					position_order = 0;
-					positionlog[position_order] = 0.0;
-					Velocity = 9.0;
-					grandState = SetZeroGr;
+//					position_order = 0;
+//					positionlog[position_order] = 0.0;
+//					Velocity = 7.0;
+					grandState = SetZeroBf;
 
 					xu_Uart();
 				}
@@ -831,7 +842,7 @@ int main(void)
 	  	  		  //__HAL_TIM_SET_PRESCALER(&htim4, pscalr); // Set freq of pwm
 	  	  		  //ADC_Target = ADCFeedx[1].datt;
 
-	  	  		///// Mot Driver ///////////////////
+	  	  		///// Mot Driver ///// 0 => CCW /// 1 => CW
 	  	  		if (mot_dirctn == 0){
 	  	  		HAL_GPIO_WritePin(Mot_dir_GPIO_Port, Mot_dir_Pin, GPIO_PIN_SET);
 	  	  		}else{
@@ -1270,7 +1281,7 @@ void GrandStatumix(){
 	if (grandState != Ready){
 		HAL_GPIO_WritePin(PLamp_Green_GPIO_Port, PLamp_Green_Pin, GPIO_PIN_RESET);
 	}
-	if (grandState != work){
+	if (grandState != work || grandState != SetZeroBf || grandState != SetZeroGr){
 			HAL_GPIO_WritePin(PLamp_Blue_GPIO_Port, PLamp_Blue_Pin, GPIO_PIN_RESET);
 		}
 	if (grandState != stop || grandState != stopnd){
@@ -1310,24 +1321,71 @@ void GrandStatumix(){
 		}
 	break;
 
+	case SetZeroBf:
+		static uint8_t counter_Z = 0;
+		//// Cat cat set zero
+		HAL_GPIO_WritePin(PLamp_Blue_GPIO_Port, PLamp_Blue_Pin, GPIO_PIN_SET);
+
+		//PWMOut = 2500;
+		//mot_dirctn = 0;
+		Unwrapping();
+		Kalmanfilter();
+
+		if(KalP >= 2.00){
+			PWMOut = 4800;
+			mot_dirctn = 0;
+		}else if (2.00 >= KalP && KalP >= 1.00) {
+					PWMOut = 2400;
+					mot_dirctn = 0;
+		}else if (1.00 >= KalP && KalP >= 0.2) {
+			PWMOut = 1200;
+			mot_dirctn = 0;
+		}else if (0.2 >= KalP && KalP >= 0.03) {
+			PWMOut = 800;
+			mot_dirctn = 0;
+		}else if (-0.1 <= KalP && KalP <= -0.02) {
+				PWMOut = 900;
+				mot_dirctn = 1;
+			}
+		else{PWMOut = PWMOut;}
+
+		if(BinPosXI == 0){
+			PWMOut = 0;
+			counter_Z++;
+		}
+		if(counter_Z >= 100){
+			counter_Z = 0;
+			PWMOut = 0;
+			fn_Uart();
+			grandState = Ready;
+		}
+
+//		if (CurrentEn <= 1.0){
+//			PWMOut = 0;
+//			HAL_Delay(1000);
+//			position_order = 0;
+//			positionlog[position_order] = 0.00; // 0.000613 - 0.0122 => 1-2/1024
+//			Velocity = 7.0;
+//			grandState = SetZeroGr;
+//		}
+		break;
+
 	case SetZeroGr:
 		HAL_GPIO_WritePin(PLamp_Blue_GPIO_Port, PLamp_Blue_Pin, GPIO_PIN_SET);
 
+			////////>>>SetZeroStp/////////////////
 		Unwrapping();
 
 		 if(flagNewpos==0){
 			Currentpos = CurrentEn;
-			//Finalposition = 0; // Put goal position here in rad
 			Distance = Finalposition - Currentpos;
 			flagNewpos = 1;
 		 }
 		Trajectory();
 		Kalmanfilter();
 		controlloop();
-//		HAL_Delay(4000); // Simulate workload
-//		flag_finishTra = 1;
 
-
+		//// <> Zero finish
 		if (flag_finishTra == 1){
 			flag_finishTra = 0;
 			//HAL_UART_Transmit(&huart2, (uint8_t*)temp_f_ack2, 2, 100);
@@ -1335,6 +1393,9 @@ void GrandStatumix(){
 			grandState = Ready;
 			ResetParam();
 		}
+		////////<<<SetZeroStp/////////////////
+//		}
+
 		if (pwr_sense == 1){grandState = emer;}
 		if (stop_sense == 0){
 					PWMOut = 0;
@@ -1388,6 +1449,8 @@ void GrandStatumix(){
 void LaserTrajex_workflow(){ // 1, n loop go to shoot laser run
 	// -1 means no position value
 	//if (Finalposition == -1){flag_LasxTraj = 0;}
+	static uint16_t timeouttt = 5050;
+	//static uint8_t missst = 0;
 
 	switch(flag_LasxTraj){
 	default:
@@ -1397,6 +1460,7 @@ void LaserTrajex_workflow(){ // 1, n loop go to shoot laser run
 		if (grandState == work){ //flag_LasxTraj != 0 ||
 			flag_LasxTraj = 1;
 			Finalposition = positionlog[position_order]; // receive in rad
+
 		}
 		break;
 	case 1: //-------------traject-----
@@ -1413,26 +1477,33 @@ void LaserTrajex_workflow(){ // 1, n loop go to shoot laser run
 		 }
 		Trajectory();
 		Kalmanfilter();
-		controlloop();
+		//controlloop();
 
 		//HAL_Delay(2500); // Simulate workload
 		//flag_finishTra = 1;
 
 		if(flag_finishTra == 1){
 			flag_finishTra = 0;
-			flag_LasxTraj = 2;
+
 			flag_efftActi = 1;
+			flag_LasxTraj = 2;
 
 			timeout_efft = millis();
+
+			if(flag_efftDis == 1){
+				timeouttt = 500;
+				efft_status = 0x78;}
+			else{timeouttt = 5050;}
+
 		}
 		break;
 	case 2: //---------------Laserwork--------------
 		trig_efftRead = 1;
 
 		// if laser finished work or tomeout and not too fast shift state
-		//if((efft_status == 0x78 || millis() - timeout_efft >= 6000) && millis() - timeout_efft >= 1500){
+		if((efft_status == 0x78 || millis() - timeout_efft >= timeouttt) && millis() - timeout_efft >= 1000){
 		// force encoder to work
-		if(efft_status == 0x78 && millis() - timeout_efft >= 5050){
+		//if(efft_status == 0x78 || millis() - timeout_efft >= timeouttt){
 			efft_status = 0x00;
 			trig_efftRead = 0;
 			position_order++; // go to next obtained position
@@ -1482,25 +1553,45 @@ void Trajectory(){
 
 		Acceleration = 0.5;
 
-
-		if (Distance/Velocity > Velocity/Acceleration){
-			Tb = Velocity/Acceleration;
-		}
-		else {
-			Tb = sqrt(2*abs(Distance));
-			Velocity = sqrt(abs(Distance)/2);
-		}
 		//TimeinS = _micros/10^6;
-		timeFinal = (4*abs(Velocity)) + ((abs(Distance)-(2*abs(Velocity)*abs(Velocity)))/abs(Velocity));
+
+		////////========<<< Quintic ============///////////
+		timeFinal = (abs(Distance)*2)/Velocity;
+
+//		a0 = Currentpos;
+//		a3 = (1/(2*pow(timeFinal,3)))*(20*Distance);
+//		a4 = (1/(2*pow(timeFinal,4)))*(30*(Currentpos-Finalposition));
+//		a5 = (1/(2*pow(timeFinal,5)))*(12*Distance);
 
 		a0 = Currentpos;
-		a3 = (1/(2*pow(timeFinal,3)))*(20*Distance);
-		a4 = (1/(2*pow(timeFinal,4)))*(30*(Currentpos-Finalposition));
-		a5 = (1/(2*pow(timeFinal,5)))*(12*Distance);
+		a3 = ((10*Finalposition)/pow(timeFinal,3))-((10*Currentpos)/pow(timeFinal,3));
+		a4 = ((15*Currentpos)/pow(timeFinal,4))-((15*Finalposition)/pow(timeFinal,4));
+		a5 = ((6*Finalposition)/pow(timeFinal,5))-((6*Currentpos)/pow(timeFinal,5));
 
-		OutPosition = a0+(a3*pow(TimeinS,3))+(a4*pow(TimeinS,4))+(a5*pow(TimeinS,5));
-		OutVelocity = (3*a3*pow(TimeinS,2))+(4*a4*pow(TimeinS,3))+(5*a5*pow(TimeinS,4));
+		if(TimeinS < timeFinal){
+			OutPosition = a0+(a3*pow(TimeinS,3))+(a4*pow(TimeinS,4))+(a5*pow(TimeinS,5)) ;//+ Currentpos
+			OutVelocity = (3*a3*pow(TimeinS,2))+(4*a4*pow(TimeinS,3))+(5*a5*pow(TimeinS,4));
+			ch = 1;
 
+		}else {
+			OutPosition = Finalposition ; //+ Currentpos
+			OutVelocity = 0;
+			OutAcceleration = 0;
+			ch = 4;
+		}
+		////////=======>>> Quintic ============///////////
+
+		////////=======<<< Tapezoidal==========//////////
+
+//      //timeFinal = (4*abs(Velocity)) + ((abs(Distance)-(2*abs(Velocity)*abs(Velocity)))/abs(Velocity));
+//
+//		if (Distance/Velocity > Velocity/Acceleration){
+//			Tb = Velocity/Acceleration;
+//		}
+//		else {
+//			Tb = sqrt(2*abs(Distance));
+//			Velocity = sqrt(abs(Distance)/2);
+//		}
 //		if (TimeinS < Tb){
 //			OutPosition = (0.5*Acceleration*TimeinS*TimeinS)+Currentpos;
 //			OutVelocity = Acceleration*TimeinS;
@@ -1538,7 +1629,7 @@ void Trajectory(){
 //		    //Acceleration= -0.5;   // recieve frol UART (negative)
 //		    check = 100;
 //		}
-
+		////////=======>>> Tapezoidal==========//////////
 
 		TimeinS = TimeinS + Dt;
 
@@ -1803,14 +1894,23 @@ void Efft_activate(){
 	uint8_t cmmd = 0x45;
 
 	static enum{ef_INIT, ef_shoot} efshoot = ef_INIT;
+
+
 	switch(efshoot){
 	default:
 	case ef_INIT:
+		if(flag_efftDis == 1){
+			flag_efftActi = 0;
+			efshoot = ef_INIT;
+		}
+		else{
+
 		if(flag_efftActi != 0 && hi2c3.State == HAL_I2C_STATE_READY){
 			HAL_I2C_Master_Seq_Transmit_IT(&hi2c3, ADDR_EFFT, &cmmd, 0, I2C_FIRST_FRAME);
 			//HAL_I2C_Master_Seq_Transmit_IT(&hi2c3, ADDR_EFFT, &cmmd, 1, I2C_FIRST_AND_LAST_FRAME);
 			//HAL_I2C_Master_Transmit(&hi2c3, ADDR_EFFT, &cmmd, 2, 100);
 			efshoot = ef_shoot;
+			}
 		}
 	break;
 
@@ -1819,11 +1919,10 @@ void Efft_activate(){
 			HAL_I2C_Master_Seq_Transmit_IT(&hi2c3, ADDR_EFFT, &cmmd, 1, I2C_LAST_FRAME);
 			efshoot = ef_INIT;
 			flag_efftActi = 0;
-			trig_efftRead = 1;
+			//trig_efftRead = 1;
 		}
 	break;
 	}
-
 }
 
 void Efft_read(uint8_t *Rddata){
@@ -1885,10 +1984,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	//=========// work Blue button //=========//
 	if(GPIO_Pin == GPIO_PIN_13){
 		bluecounter++;
-//		for(uint8_t i = 0; i <= sizeof(PosDataSet); i++){
-//		    		positionlog[i] = PosDataSet[i];
-//		    	}
-		//if(grandState == Ready){}
 
 		////===== Zero Calibrate Func /////////////
 		if (bluecounter % 2 == 0){
@@ -1906,10 +2001,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 
 	//=============// setzero //================//
 		if(GPIO_Pin == GPIO_PIN_2){
-			position_order = 0;
-			positionlog[position_order] = 0.0122; // 0.000613 - 0.0122 => 1-2/1024
-			Velocity = 7.0;
-			grandState = SetZeroGr;
+//			position_order = 0;
+//			positionlog[position_order] = 0.00; // 0.000613 - 0.0122 => 1-2/1024
+//			Velocity = 7.0;
+			grandState = SetZeroBf;
 		}
 }
 
