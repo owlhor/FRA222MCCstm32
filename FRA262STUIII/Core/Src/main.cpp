@@ -67,7 +67,7 @@ using namespace Eigen;
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define POSOFFSET -100 // angle zero offset abs enc
+#define POSOFFSET 879 // angle zero offset abs enc
 #define NumPosDataSetDef 1  // DataSet Select
 
 #define ADDR_EFFT 0b01000110 // End Effector Addr 0x23 0010 0011
@@ -113,7 +113,7 @@ float rawPossw_2[PosBufSize] = {0.0, 0.0, 6.195};
 float rawPossw_3[PosBufSize] = {0.0, 1.0, 0.5, 1.2, 2.4, 1.1, 2.3, 1.3, 0.8, 8.5};
 float rawPossw_4[PosBufSize] = {0.0, 0.00, 0.087, 0.174, 0.261 , 0.349, 0.436, 0.523};
 
-uint16_t PosoffsetMon = 0; // send to CubeMonitor
+int PosoffsetMon = 0; // send to CubeMonitor
 ///////////////// [Grand State] ///////////// [Grand State] //////////////////////
 static enum {Ready, work, stop, emer ,stopnd, SetZeroGr, SetZeroBf} grandState = Ready;
 uint8_t pwr_sense = 0;
@@ -171,7 +171,7 @@ float a5 = 0;
 
 uint32_t TimeStampKalman = 0;
 uint64_t runtime = 0;
-float Q1 = 4000;
+float Q1 = 3500; // 100 for Quintic, 5/7/65
 
 Matrix <float,3,3> A ;
 Matrix <float,3,3> P ;
@@ -224,14 +224,35 @@ float ErrPos[2] = {0};  // error
 float ufromposit = 0 ;
 float sumError = 0 ;
 
-////// 1/7/65
-float K_P = 0.00175;
-float K_I = 0.0000; // 0.0
-float K_D = 0.0003;    // 0.0
+///// 5/7/65 Quintic
+//float K_P = 0.0016;
+//float K_I = 0.00000;
+//float K_D = 0.0;
 
-//float K_P = 4;
-//float K_I = 0.006;
-//float K_D = 2;
+
+//float K_P = 1;
+//float K_I = 0.0; // 0.0
+//float K_D = 0.0;
+
+////// 5/7/65
+//float K_P = 0.00194;
+//float K_I = 0.000001; // 0.0
+//float K_D = 0.0002;
+
+////// 5/7/65 1KG
+//float K_P = 0.00305;
+//float K_I = 0.0000014; // 0.0
+//float K_D = 0.0002;
+
+////// 1/7/65
+//float K_P = 0.00175;
+//float K_I = 0.0000; // 0.0
+//float K_D = 0.0003;    // 0.0
+
+//// old
+float K_P = 3;
+float K_I = 0.003;
+float K_D = 2;
 
 
 float Propo;
@@ -240,19 +261,25 @@ float Derivate;
 /////////////////////////// [PID Velo] //////////////////////////
 float ErrVelo[3] = {0};  // error
 
-float K_P_V = 2.1225;
-float K_I_V = 0.32222225;
-float K_D_V = 40;
+
+//// old
+//float K_P_V = 2.1225;
+//float K_I_V = 0.32222225;
+//float K_D_V = 40;
 
 ////// 1/7/65
-//float K_P_V = 2.0;
-//float K_I_V = 0.215;
-//float K_D_V = 1.65;
+float K_P_V = 0;
+float K_I_V = 0;
+float K_D_V = 0;
 
-////// 1/7/65 18.16
-//float K_P_V = 2.000;
-//float K_I_V = 0.222;
-//float K_D_V = 1.811;
+////// 5/7/65 22.12 Quintic
+//float K_P_V = 2.689;
+//float K_I_V = 0.097; //19
+//float K_D_V = 4.20;
+
+//float K_P_V = 2.68;
+//float K_I_V = 0.189; //19
+//float K_D_V = 2.75;
 
 float Vcontr[2] = {0};
 float SumAll = 0;
@@ -1340,11 +1367,11 @@ void GrandStatumix(){
 		}else if (1.00 >= KalP && KalP >= 0.2) {
 			PWMOut = 1200;
 			mot_dirctn = 0;
-		}else if (0.2 >= KalP && KalP >= 0.03) {
-			PWMOut = 800;
+		}else if (0.2 >= KalP && KalP >= 0.006) {
+			PWMOut = 950;
 			mot_dirctn = 0;
-		}else if (-0.1 <= KalP && KalP <= -0.02) {
-				PWMOut = 900;
+		}else if (1000 <= BinPosXI && BinPosXI <= 1023) {
+				PWMOut = 950;
 				mot_dirctn = 1;
 			}
 		else{PWMOut = PWMOut;}
@@ -1477,7 +1504,7 @@ void LaserTrajex_workflow(){ // 1, n loop go to shoot laser run
 		 }
 		Trajectory();
 		Kalmanfilter();
-		//controlloop();
+		controlloop();
 
 		//HAL_Delay(2500); // Simulate workload
 		//flag_finishTra = 1;
@@ -1501,9 +1528,11 @@ void LaserTrajex_workflow(){ // 1, n loop go to shoot laser run
 		trig_efftRead = 1;
 
 		// if laser finished work or tomeout and not too fast shift state
-		if((efft_status == 0x78 || millis() - timeout_efft >= timeouttt) && millis() - timeout_efft >= 1000){
-		// force encoder to work
+		//if((efft_status == 0x78 || millis() - timeout_efft >= timeouttt) && millis() - timeout_efft >= 1000){
+		//// force encoder to work
 		//if(efft_status == 0x78 || millis() - timeout_efft >= timeouttt){
+		////bcheat force
+		if(millis() - timeout_efft >= timeouttt){
 			efft_status = 0x00;
 			trig_efftRead = 0;
 			position_order++; // go to next obtained position
@@ -1556,84 +1585,100 @@ void Trajectory(){
 		//TimeinS = _micros/10^6;
 
 		////////========<<< Quintic ============///////////
-		timeFinal = (abs(Distance)*2)/Velocity;
-
+//		timeFinal = (abs(Distance)*2)/Velocity;
+//
 //		a0 = Currentpos;
-//		a3 = (1/(2*pow(timeFinal,3)))*(20*Distance);
-//		a4 = (1/(2*pow(timeFinal,4)))*(30*(Currentpos-Finalposition));
-//		a5 = (1/(2*pow(timeFinal,5)))*(12*Distance);
-
-		a0 = Currentpos;
-		a3 = ((10*Finalposition)/pow(timeFinal,3))-((10*Currentpos)/pow(timeFinal,3));
-		a4 = ((15*Currentpos)/pow(timeFinal,4))-((15*Finalposition)/pow(timeFinal,4));
-		a5 = ((6*Finalposition)/pow(timeFinal,5))-((6*Currentpos)/pow(timeFinal,5));
-
-		if(TimeinS < timeFinal){
-			OutPosition = a0+(a3*pow(TimeinS,3))+(a4*pow(TimeinS,4))+(a5*pow(TimeinS,5)) ;//+ Currentpos
-			OutVelocity = (3*a3*pow(TimeinS,2))+(4*a4*pow(TimeinS,3))+(5*a5*pow(TimeinS,4));
-			ch = 1;
-
-		}else {
-			OutPosition = Finalposition ; //+ Currentpos
-			OutVelocity = 0;
-			OutAcceleration = 0;
-			ch = 4;
-		}
+//		a3 = ((10*Finalposition)/pow(timeFinal,3))-((10*Currentpos)/pow(timeFinal,3));
+//		a4 = ((15*Currentpos)/pow(timeFinal,4))-((15*Finalposition)/pow(timeFinal,4));
+//		a5 = ((6*Finalposition)/pow(timeFinal,5))-((6*Currentpos)/pow(timeFinal,5));
+//
+//		if(TimeinS < timeFinal){
+//			OutPosition = a0+(a3*pow(TimeinS,3))+(a4*pow(TimeinS,4))+(a5*pow(TimeinS,5)) ;//+ Currentpos
+//			OutVelocity = (3*a3*pow(TimeinS,2))+(4*a4*pow(TimeinS,3))+(5*a5*pow(TimeinS,4));
+//			ch = 1;
+//
+//		}else {
+//			OutPosition = Finalposition ; //+ Currentpos
+//			OutVelocity = 0;
+//			OutAcceleration = 0;
+//			ch = 4;
+//		}
 		////////=======>>> Quintic ============///////////
 
 		////////=======<<< Tapezoidal==========//////////
 
-//      //timeFinal = (4*abs(Velocity)) + ((abs(Distance)-(2*abs(Velocity)*abs(Velocity)))/abs(Velocity));
-//
-//		if (Distance/Velocity > Velocity/Acceleration){
-//			Tb = Velocity/Acceleration;
-//		}
-//		else {
-//			Tb = sqrt(2*abs(Distance));
-//			Velocity = sqrt(abs(Distance)/2);
-//		}
-//		if (TimeinS < Tb){
-//			OutPosition = (0.5*Acceleration*TimeinS*TimeinS)+Currentpos;
-//			OutVelocity = Acceleration*TimeinS;
-//			OutAcceleration = Acceleration;
-//			ch = 1;
-//			}
-//		else if(TimeinS < (timeFinal-Tb)){
-//			OutPosition = (0.5*Acceleration*(Tb*Tb)) + (Velocity*(TimeinS-Tb))+Currentpos;
-//			OutVelocity = Velocity;
-//			OutAcceleration = 0;
-//			ch = 2;
-//			}
-//		else if(((timeFinal-Tb) <= TimeinS) && (TimeinS <= timeFinal)){
-//			OutPosition = (0.5*Acceleration*(Tb*Tb))+ (Velocity*(timeFinal-(2*Tb)))  + (Velocity*(TimeinS-(timeFinal-Tb))) - (0.5*Acceleration*((TimeinS-(timeFinal-Tb))*(TimeinS-(timeFinal-Tb))))+Currentpos;
-//			OutVelocity = Velocity-(Acceleration*(TimeinS-(timeFinal-Tb)));
-//			OutAcceleration = -Acceleration;
-//			ch = 3;
-//			}
-//		else if(TimeinS > timeFinal){
-//			OutPosition = Distance+Currentpos;
-//			OutAcceleration = 0;
-//			ch = 4;
-//			}
-//
-//		if (Distance > 0){
-//			//Velocity = 1.04719755; // [From UART] Put Max Velo here
-//			//Acceleration= 0.5;   // recieve frol UART
-//			check = 50;
-//		}
-//		else if(Distance < 0){
-//			//Velocity=-1.04719755; // [From UART] Put Max Velo here  (negative)
-//			//Velocity= -1 * Velocity;
-//			OutVelocity = OutVelocity * -1.0;
-//			OutPosition = OutPosition * -1.0;
-//		    //Acceleration= -0.5;   // recieve frol UART (negative)
-//		    check = 100;
-//		}
+      timeFinal = (4*abs(Velocity)) + ((abs(Distance)-(2*abs(Velocity)*abs(Velocity)))/abs(Velocity));
+
+		if (Distance/Velocity > Velocity/Acceleration){
+			Tb = Velocity/Acceleration;
+		}
+		else {
+			Tb = sqrt(2*abs(Distance));
+			Velocity = sqrt(abs(Distance)/2);
+		}
+		if (TimeinS < Tb){
+			OutPosition = (0.5*Acceleration*TimeinS*TimeinS)+Currentpos;
+			OutVelocity = Acceleration*TimeinS;
+			OutAcceleration = Acceleration;
+			K_P_V = 2.5;
+			K_I_V = 0.23;
+			K_D_V = 1.7;
+			ch = 1;
+			}
+		else if(TimeinS < (timeFinal-Tb)){
+			OutPosition = (0.5*Acceleration*(Tb*Tb)) + (Velocity*(TimeinS-Tb))+Currentpos;
+			OutVelocity = Velocity;
+			OutAcceleration = 0;
+			K_P_V = 2.0;
+			K_I_V = 0.215;
+			K_D_V = 1.7;
+			ch = 2;
+			}
+		else if(((timeFinal-Tb) <= TimeinS) && (TimeinS <= timeFinal)){
+			OutPosition = (0.5*Acceleration*(Tb*Tb))+ (Velocity*(timeFinal-(2*Tb)))  + (Velocity*(TimeinS-(timeFinal-Tb))) - (0.5*Acceleration*((TimeinS-(timeFinal-Tb))*(TimeinS-(timeFinal-Tb))))+Currentpos;
+			OutVelocity = Velocity-(Acceleration*(TimeinS-(timeFinal-Tb)));
+			OutAcceleration = -Acceleration;
+			K_P_V = 1.5;
+			K_I_V = 0.2;
+			K_D_V = 1.7;
+			ch = 3;
+			}
+		else if(TimeinS > timeFinal){
+			OutPosition = Distance+Currentpos;
+			OutAcceleration = 0;
+			K_P_V = 2.0;
+			K_I_V = 0.2;
+			K_D_V = 1.7;
+			ch = 4;
+			}
+
+		if (Distance > 0){
+			//Velocity = 1.04719755; // [From UART] Put Max Velo here
+			//Acceleration= 0.5;   // recieve frol UART
+			check = 50;
+		}
+		else if(Distance < 0){
+			//Velocity=-1.04719755; // [From UART] Put Max Velo here  (negative)
+			//Velocity= -1 * Velocity;
+			OutVelocity = OutVelocity * -1.0;
+			if(ch==4){
+				OutPosition = Distance+Currentpos;
+			}
+			else{
+				OutPosition = (OutPosition * -1.0)+(2*Currentpos) ;
+			}
+		    //Acceleration= -0.5;   // recieve frol UART (negative)
+		    check = 100;
+		}
+
 		////////=======>>> Tapezoidal==========//////////
 
 		TimeinS = TimeinS + Dt;
 
+		//////<<< PID Tuning
 		//OutVelocity = 0.523598775 ;
+		//////>>> PID Tuning
+
 		}
 }
 
@@ -1765,6 +1810,10 @@ void controlloop(){
 		PWMOut = 0;
 		check = 8;
 
+		ErrPos[0]=0;
+		ErrPos[1]=0;
+		ErrVelo[0]=0;
+		ErrVelo[1]=0;
 		flagNewpos = 0;
 		flag_finishTra = 1;
 		TimeinS = 0;
@@ -1775,7 +1824,6 @@ void controlloop(){
 		MotDrvCytron();
 	}
 }
-
 
 void MotDrvCytron(){
 
@@ -2004,6 +2052,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 //			position_order = 0;
 //			positionlog[position_order] = 0.00; // 0.000613 - 0.0122 => 1-2/1024
 //			Velocity = 7.0;
+//			grandState = SetZeroGr;
+
 			grandState = SetZeroBf;
 		}
 }
