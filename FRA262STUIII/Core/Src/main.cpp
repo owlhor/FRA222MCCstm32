@@ -66,8 +66,8 @@ using namespace Eigen;
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define POSOFFSET 905 // angle zero offset abs enc
-#define NumPosDataSetDef 4  // DataSet Select
+#define POSOFFSET 895 // angle zero offset abs enc
+#define NumPosDataSetDef 1  // DataSet Select
 
 #define ADDR_EFFT 0b01000110 // End Effector Addr 0x23 0010 0011
 #define ADDR_IOXT 0b01000000 // datasheet p15
@@ -356,6 +356,8 @@ uint8_t Posdata;
 uint8_t Nstation;
 uint8_t dataFSum;
 
+int degree_Uart;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -534,8 +536,10 @@ void All_mode_UARTUI()
 					M_state = 5;
 
 					DataProtocol_SetAngPosi = (Set_AngPosi[0]*256) + Set_AngPosi[1];
-					//positionlog[0] = (DataProtocol_SetAngPosi / (3.14 * 10000) * 180);
-					positionlog[0] = (float)(DataProtocol_SetAngPosi / 10000.0);
+					//int degree_Uart;
+					degree_Uart = round((DataProtocol_SetAngPosi / (M_PI * 10000) * 180));
+					positionlog[0] = (float)(degree_Uart * M_PI) / 180;
+					//positionlog[0] = (float)(DataProtocol_SetAngPosi / 10000.0);
 					//HAL_UART_Transmit_DMA(&huart2, (uint8_t*)temp_s, 2);
 					xu_Uart();
 				}
@@ -1811,6 +1815,12 @@ void PIDVelocity(){
 }
 
 void controlloop(){
+	static uint16_t counter_ctl = 0;
+	uint16_t FinalBitX = 0;
+	FinalBitX = round(Finalposition * 512 / M_PI);
+	///// Conv FinalPos back to bit1024:
+	///// FinalPos x (Pi / 180) x (1024/360) ==> FinalPos x 512/pi
+
 
 	if( abs( Finalposition - KalP) < 0.001 && abs(KalV) < 0.0005){
 		PWMOut = 0;
@@ -1820,11 +1830,27 @@ void controlloop(){
 		flag_finishTra = 1;
 		TimeinS = 0;
 	}
+	else if( abs(FinalBitX- BinPosXI) <= 1){
+		counter_ctl++;
+		check = 9;
+
+		if(counter_ctl >= 800){
+		counter_ctl = 0;
+		PWMOut = 0;
+		check = 10;
+
+		flagNewpos = 0;
+		flag_finishTra = 1;
+		TimeinS = 0;
+		}
+	}
 	else{
 		PIDPosition();
 		PIDVelocity();
 		MotDrvCytron();
 	}
+
+
 }
 
 void MotDrvCytron(){
