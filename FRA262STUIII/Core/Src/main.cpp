@@ -61,14 +61,13 @@ using namespace Eigen;
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define POSOFFSET 879 // angle zero offset abs enc
-#define NumPosDataSetDef 1  // DataSet Select
+#define POSOFFSET 905 // angle zero offset abs enc
+#define NumPosDataSetDef 4  // DataSet Select
 
 #define ADDR_EFFT 0b01000110 // End Effector Addr 0x23 0010 0011
 #define ADDR_IOXT 0b01000000 // datasheet p15
@@ -108,7 +107,7 @@ DMA_HandleTypeDef hdma_usart2_tx;
  * Set 4 => 0, 5, 10, 15, 20, 25, 30, 35, 40  // worst case #1
  * */
 static uint8_t NumPosDataSetx  = 0 + NumPosDataSetDef;
-float rawPossw_1[PosBufSize] = {0.0, 0.78, 1.57, 2.35, 3.14 ,3.92 ,4.712, 5.497};
+float rawPossw_1[PosBufSize] = {0.0, 0.78, 1.57, 2.35, 3.14 ,3.92 ,4.712, 5.497,0.0};
 float rawPossw_2[PosBufSize] = {0.0, 0.0, 6.195};
 float rawPossw_3[PosBufSize] = {0.0, 1.0, 0.5, 1.2, 2.4, 1.1, 2.3, 1.3, 0.8, 8.5};
 float rawPossw_4[PosBufSize] = {0.0, 0.00, 0.087, 0.174, 0.261 , 0.349, 0.436, 0.523};
@@ -250,9 +249,9 @@ float sumError = 0 ;
 //float K_D = 0.0003;    // 0.0
 
 //// old
-float K_P = 3;
-float K_I = 0.003;
-float K_D = 2;
+float K_P = 3.25;
+float K_I = 0.00465;
+float K_D = 0.01;
 
 
 float Propo;
@@ -1456,6 +1455,11 @@ void GrandStatumix(){
 
 
 			if (stop_sense == 1){
+
+//				Currentpos = CurrentEn;
+//				Distance = Finalposition - Currentpos;
+//				flagNewpos = 1;
+//				check = 0;
 				grandState = work;
 			}
 		break;
@@ -1528,11 +1532,11 @@ void LaserTrajex_workflow(){ // 1, n loop go to shoot laser run
 		trig_efftRead = 1;
 
 		// if laser finished work or tomeout and not too fast shift state
-		//if((efft_status == 0x78 || millis() - timeout_efft >= timeouttt) && millis() - timeout_efft >= 1000){
+		if((efft_status == 0x78 || millis() - timeout_efft >= timeouttt) && millis() - timeout_efft >= 1000){
 		//// force encoder to work
 		//if(efft_status == 0x78 || millis() - timeout_efft >= timeouttt){
-		////bcheat force
-		if(millis() - timeout_efft >= timeouttt){
+		//// cheat force
+		//if(millis() - timeout_efft >= timeouttt){
 			efft_status = 0x00;
 			trig_efftRead = 0;
 			position_order++; // go to next obtained position
@@ -1621,8 +1625,8 @@ void Trajectory(){
 			OutVelocity = Acceleration*TimeinS;
 			OutAcceleration = Acceleration;
 			K_P_V = 2.5;
-			K_I_V = 0.23;
-			K_D_V = 1.7;
+			K_I_V = 0.25;
+			K_D_V = 1.2;
 			ch = 1;
 			}
 		else if(TimeinS < (timeFinal-Tb)){
@@ -1638,26 +1642,27 @@ void Trajectory(){
 			OutPosition = (0.5*Acceleration*(Tb*Tb))+ (Velocity*(timeFinal-(2*Tb)))  + (Velocity*(TimeinS-(timeFinal-Tb))) - (0.5*Acceleration*((TimeinS-(timeFinal-Tb))*(TimeinS-(timeFinal-Tb))))+Currentpos;
 			OutVelocity = Velocity-(Acceleration*(TimeinS-(timeFinal-Tb)));
 			OutAcceleration = -Acceleration;
-			K_P_V = 1.5;
-			K_I_V = 0.2;
-			K_D_V = 1.7;
+			K_P_V = 2.0;
+			K_I_V = 0.215;
+			K_D_V = 1.2;
 			ch = 3;
 			}
 		else if(TimeinS > timeFinal){
 			OutPosition = Distance+Currentpos;
 			OutAcceleration = 0;
-			K_P_V = 2.0;
+			K_P_V = 2.5;
 			K_I_V = 0.2;
-			K_D_V = 1.7;
+			K_D_V = 1.4;
 			ch = 4;
 			}
 
-		if (Distance > 0){
-			//Velocity = 1.04719755; // [From UART] Put Max Velo here
-			//Acceleration= 0.5;   // recieve frol UART
-			check = 50;
-		}
-		else if(Distance < 0){
+//		if (Distance > 0){
+//			//Velocity = 1.04719755; // [From UART] Put Max Velo here
+//			//Acceleration= 0.5;   // recieve frol UART
+//			check = 50;
+//		}
+//		else
+		if(Distance < 0){
 			//Velocity=-1.04719755; // [From UART] Put Max Velo here  (negative)
 			//Velocity= -1 * Velocity;
 			OutVelocity = OutVelocity * -1.0;
@@ -1667,6 +1672,7 @@ void Trajectory(){
 			else{
 				OutPosition = (OutPosition * -1.0)+(2*Currentpos) ;
 			}
+
 		    //Acceleration= -0.5;   // recieve frol UART (negative)
 		    check = 100;
 		}
@@ -1699,7 +1705,7 @@ void Unwrapping(){
 		}
 
 		OutUnwrap = Pn + P0;
-		CurrentEn = BinPosXI * 0.006136;
+		CurrentEn = BinPosXI * 0.00613592;
 		P_n = Pn;
 		P_0 = P0;
 	}
@@ -1806,14 +1812,10 @@ void PIDVelocity(){
 
 void controlloop(){
 
-	if( abs( Finalposition - KalP) < 0.005 && abs(KalV) < 0.0005){
+	if( abs( Finalposition - KalP) < 0.001 && abs(KalV) < 0.0005){
 		PWMOut = 0;
 		check = 8;
 
-		ErrPos[0]=0;
-		ErrPos[1]=0;
-		ErrVelo[0]=0;
-		ErrVelo[1]=0;
 		flagNewpos = 0;
 		flag_finishTra = 1;
 		TimeinS = 0;
