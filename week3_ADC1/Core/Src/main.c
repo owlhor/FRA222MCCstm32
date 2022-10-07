@@ -18,7 +18,6 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "stdio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -50,7 +49,7 @@ typedef struct{
 	uint16_t datt;
 }ADCStructure;
 
-ADCStructure ADCChannell[3];
+ADCStructure ADCChannell[4];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -85,7 +84,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+   HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -300,6 +299,11 @@ void ADCConfigINIT(){
 	ADCChannell[2].Confix.Channel = ADC_CHANNEL_TEMPSENSOR;
 	ADCChannell[2].Confix.Rank = 1;
 	ADCChannell[2].Confix.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+
+	// Config PA1
+	ADCChannell[3].Confix.Channel = ADC_CHANNEL_7;
+	ADCChannell[3].Confix.Rank = 1;
+	ADCChannell[3].Confix.SamplingTime = ADC_SAMPLETIME_3CYCLES;
 }
 uint16_t ADCDataRaw = 0;
 void ADCReadUpdate()
@@ -310,7 +314,7 @@ void ADCReadUpdate()
 	sConfigura.Rank = 1;
 	sConfigura.SamplingTime = ADC_SAMPLETIME_144CYCLES;*/
 
-	for(int i=0;i<3;i++){
+	for(int i=0;i<4;i++){
 	// Setting channel
 	HAL_ADC_ConfigChannel(&hadc1, &ADCChannell[i].Confix);
 

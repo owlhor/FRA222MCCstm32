@@ -66,10 +66,10 @@ using namespace Eigen;
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define POSOFFSET 895 // angle zero offset abs enc
-#define NumPosDataSetDef 1  // DataSet Select
+#define POSOFFSET 888 // angle zero offset abs enc
+#define NumPosDataSetDef 5  // DataSet Select
 
-#define ADDR_EFFT 0b01000110 // End Effector Addr 0x23 0010 0011
+#define ADDR_EFFT 0b01000110 // End Effector Addr 0x23 0 010 0011
 #define ADDR_IOXT 0b01000000 // datasheet p15
 
 #define RxBuf_SIZE   32
@@ -101,16 +101,18 @@ DMA_HandleTypeDef hdma_usart2_tx;
 //===============================================================================
 ///////////// [[DATASET]] /////////////////////////////
 /*
- * Set 1 => 45, 90, 135, 180, 225, 270, 315
+ * Set 1 => 45, 90, 135, 180, 225, 270, 315, 0
  * Set 2 => 0, 355 // worst case 2
- * Set 3 => n/a
+ * Set 3 => 45, 135, 95, 355, 275, 5, 0
  * Set 4 => 0, 5, 10, 15, 20, 25, 30, 35, 40  // worst case #1
+ * Set 5 => 30, 60, 90, ... , 270, 300
  * */
 static uint8_t NumPosDataSetx  = 0 + NumPosDataSetDef;
 float rawPossw_1[PosBufSize] = {0.0, 0.78, 1.57, 2.35, 3.14 ,3.92 ,4.712, 5.497,0.0};
 float rawPossw_2[PosBufSize] = {0.0, 0.0, 6.195};
-float rawPossw_3[PosBufSize] = {0.0, 1.0, 0.5, 1.2, 2.4, 1.1, 2.3, 1.3, 0.8, 8.5};
+float rawPossw_3[PosBufSize] = {0.0, 0.7853, 2.3561, 1.6580, 6.1959, 4.7996, 0.0872, 0.0};
 float rawPossw_4[PosBufSize] = {0.0, 0.00, 0.087, 0.174, 0.261 , 0.349, 0.436, 0.523};
+float rawPossw_5[PosBufSize] = {0.0, 0.5235, 1.0471, 1.5707, 2.0943, 2.6179, 3.1415, 3.6651, 4.1887, 4.7123, 5.2359};
 
 int PosoffsetMon = 0; // send to CubeMonitor
 ///////////////// [Grand State] ///////////// [Grand State] //////////////////////
@@ -249,8 +251,8 @@ float sumError = 0 ;
 //float K_D = 0.0003;    // 0.0
 
 //// old
-float K_P = 3.25;
-float K_I = 0.00465;
+float K_P = 2.9 ;
+float K_I = 0.00475;
 float K_D = 0.01;
 
 
@@ -818,6 +820,11 @@ int main(void)
 		for(int t = 0;t <= PosBufSize ;t++){
 		PosDataSet[t] = rawPossw_4[t];
 		} break;
+
+    case 5:
+    		for(int t = 0;t <= PosBufSize ;t++){
+    		PosDataSet[t] = rawPossw_5[t];
+    		} break;
     }
 
     PosoffsetMon = 0 + POSOFFSET; // for send to cubeMon
@@ -1825,7 +1832,12 @@ void controlloop(){
 	if( abs( Finalposition - KalP) < 0.001 && abs(KalV) < 0.0005){
 		PWMOut = 0;
 		check = 8;
+		ch = 5;
 
+		ErrPos[0]=0;
+		ErrPos[1]=0;
+		ErrVelo[0]=0;
+		ErrVelo[1]=0;
 		flagNewpos = 0;
 		flag_finishTra = 1;
 		TimeinS = 0;
@@ -1834,11 +1846,17 @@ void controlloop(){
 		counter_ctl++;
 		check = 9;
 
+
 		if(counter_ctl >= 800){
 		counter_ctl = 0;
 		PWMOut = 0;
 		check = 10;
+		ch = 5;
 
+		ErrPos[0]=0;
+		ErrPos[1]=0;
+		ErrVelo[0]=0;
+		ErrVelo[1]=0;
 		flagNewpos = 0;
 		flag_finishTra = 1;
 		TimeinS = 0;
