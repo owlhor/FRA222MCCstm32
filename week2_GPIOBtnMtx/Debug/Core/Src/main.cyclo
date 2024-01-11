@@ -1,0 +1,9 @@
+main.c:80:5:main	13
+main.c:172:6:SystemClock_Config	3
+main.c:217:13:MX_USART2_UART_Init	2
+main.c:250:13:MX_GPIO_Init	1
+main.c:329:6:BtnMtxRd	4
+main.c:394:5:DecoToNum	19
+main.c:441:6:CounterSet	3
+main.c:455:5:ShiftTest	1
+main.c:466:6:Error_Handler	1

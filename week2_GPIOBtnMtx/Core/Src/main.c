@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,6 +43,8 @@
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+char TextUARTBuffer[100];
+
 uint16_t BtnState = 0;
 static uint64_t CodeCC = 0;
 uint8_t DecoNum; // for debgg
@@ -49,6 +52,7 @@ static uint16_t counter = 0;
 static uint16_t PeriodOfCnter = 100; // counter trigg& reset
 static uint8_t RiseTgr = 0; // std_logic boolean
 static uint8_t OkToggle = 0; // std_logic boolean
+
 //////mega challenga
 static uint64_t SaveCC = 63340500060;
 /* USER CODE END PV */
@@ -99,7 +103,9 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  //// debug
+  	sprintf(TextUARTBuffer," \r\n --------- BTNMTX ----------");
+  	HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -113,12 +119,14 @@ int main(void)
 	BtnMtxRd();
 	
 	// Add number in CodeCC
-	if(RiseTgr == 1 && counter == PeriodOfCnter){
+	if(RiseTgr == 1 ){ //&& counter == PeriodOfCnter
 		  DecoNum = DecoToNum(); // debgg
 		  if ( 0 <= DecoNum && DecoNum <= 9){  // non number is unallow
 			  //CodeCC = (CodeCC << 4) + DecoNum;  // hex algor
 			  CodeCC = (CodeCC * 10) + DecoNum;  // dec algor
 			  } 
+//		  sprintf(TextUARTBuffer,"\r\n K1 ");
+//		  HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
 		  RiseTgr = 0;
 		}
 		
@@ -135,7 +143,7 @@ int main(void)
 
 		// Clear
 	if( ShiftTest(3) == 1)
-		{ 
+		{
 		  CodeCC = 0x00;
 		}
 		// <x-- backspace
@@ -347,39 +355,87 @@ void BtnMtxRd(){// Read 4x4 Matrix button
 	}
 }
 
-int DecoToNum()
+//int DecoToNum()
+//{
+//	for(int j = 0;j < 14; j++){
+//		int8_t Chkrr =( BtnState >> j )&0x01;
+//
+//		if(Chkrr == 1){
+//			switch(j){
+//			case 0:
+//				return 7;
+//			case 1:
+//				return 8;
+//			case 2:
+//				return 9;
+//			case 4:
+//				return 4;
+//			case 5:
+//				return 5;
+//			case 6:
+//				return 6;
+//			case 8:
+//				return 1;
+//			case 9:
+//				return 2;
+//			case 10:
+//				return 3;
+//			case 13:
+//			default:
+//				return 0;
+//			case 15:// ok-> send wrong digit
+//				return 555;
+//			}
+//		}
+//	}
+//	return 555;
+//}
+
+int DecoToNum() //// alter for UART OUT
 {
-	for(int j = 0;j < 14; j++){
-		int8_t Chkrr =( BtnState >> j )&0x01;
+	for(int j = 0;j < 16; j++){
+		uint8_t Chkrr =(BtnState >> j )&0x01;
 
 		if(Chkrr == 1){
 			switch(j){
-			case 0:
+			case 0: sprintf(TextUARTBuffer,"\r\n K1 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
 				return 7;
-			case 1:
+			case 1: sprintf(TextUARTBuffer,"\r\n K2 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
 				return 8;
-			case 2:
+			case 2: sprintf(TextUARTBuffer,"\r\n K3 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
 				return 9;
-			case 4:
+			case 3: sprintf(TextUARTBuffer,"\r\n K4 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
+				return 555;
+			case 4: sprintf(TextUARTBuffer,"\r\n K5 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
 				return 4;
-			case 5:
+			case 5: sprintf(TextUARTBuffer,"\r\n K6 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
 				return 5;
-			case 6:
+			case 6: sprintf(TextUARTBuffer,"\r\n K7 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
 				return 6;
-			case 8:
+			case 7: sprintf(TextUARTBuffer,"\r\n K8 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
+				return 555;
+			case 8: sprintf(TextUARTBuffer,"\r\n K9 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
 				return 1;
-			case 9:
+			case 9: sprintf(TextUARTBuffer,"\r\n K10 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
 				return 2;
-			case 10:
+			case 10: sprintf(TextUARTBuffer,"\r\n K11 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
 				return 3;
-			case 13:
+			case 11: sprintf(TextUARTBuffer,"\r\n K12 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
+				return 555;
+			case 12: sprintf(TextUARTBuffer,"\r\n K13 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
+				return 555;
+			case 13: sprintf(TextUARTBuffer,"\r\n K14 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
 			default:
 				return 0;
-			case 15:// ok-> send wrong digit
+			case 14: sprintf(TextUARTBuffer,"\r\n K15 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
+				return 555;
+			case 15: sprintf(TextUARTBuffer,"\r\n K16 "); HAL_UART_Transmit(&huart2, (uint8_t*)TextUARTBuffer, strlen(TextUARTBuffer),10);
+			// ok-> send wrong digit
 				return 555;
 			}
 		}
 	}
+	return 555;
 }
 
 void CounterSet()

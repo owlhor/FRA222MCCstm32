@@ -1,0 +1,16 @@
+main.c:90:5:main	5
+main.c:168:6:SystemClock_Config	3
+main.c:213:13:MX_ADC1_Init	3
+main.c:263:13:MX_SPI3_Init	2
+main.c:301:13:MX_TIM3_Init	4
+main.c:346:13:MX_TIM11_Init	2
+main.c:377:13:MX_USART2_UART_Init	2
+main.c:408:13:MX_DMA_Init	1
+main.c:426:13:MX_GPIO_Init	1
+main.c:482:6:MCP4922SetOutput	1
+main.c:491:6:SignalGen	9
+main.c:529:6:HAL_GPIO_EXTI_Callback	3
+main.c:538:6:HAL_SPI_TxCpltCallback	2
+main.c:547:6:HAL_TIM_PeriodElapsedCallback	2
+main.c:552:17:micros	1
+main.c:562:6:Error_Handler	1

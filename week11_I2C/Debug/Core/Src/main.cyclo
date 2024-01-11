@@ -1,0 +1,14 @@
+main.c:92:5:main	2
+main.c:159:6:SystemClock_Config	3
+main.c:204:13:MX_I2C1_Init	2
+main.c:238:13:MX_USART2_UART_Init	2
+main.c:271:13:MX_GPIO_Init	1
+main.c:304:6:EEPROMWriteExample	3
+main.c:314:6:EEPROMWriteFunc	3
+main.c:326:6:EEPROMReadExample	3
+main.c:335:6:IOExpenderInit	1
+main.c:344:6:IOExpenderReadPinA	3
+main.c:351:6:IOExpenderWritePinB	3
+main.c:361:6:mystpfunc	6
+main.c:397:6:HAL_GPIO_EXTI_Callback	2
+main.c:409:6:Error_Handler	1

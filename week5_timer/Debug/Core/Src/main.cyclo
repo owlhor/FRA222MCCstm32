@@ -1,0 +1,14 @@
+main.c:102:5:main	5
+main.c:197:6:SystemClock_Config	3
+main.c:242:13:MX_ADC1_Init	3
+main.c:292:13:MX_TIM1_Init	7
+main.c:367:13:MX_TIM3_Init	4
+main.c:412:13:MX_TIM10_Init	2
+main.c:443:13:MX_TIM11_Init	2
+main.c:474:13:MX_USART2_UART_Init	2
+main.c:507:13:MX_GPIO_Init	1
+main.c:568:6:HAL_ADC_ConvCpltCallback	1
+main.c:574:6:HAL_TIM_PeriodElapsedCallback	3
+main.c:584:10:micros	1
+main.c:587:10:millis	1
+main.c:596:6:Error_Handler	1

@@ -1,0 +1,13 @@
+main.c:96:5:main	3
+main.c:175:6:SystemClock_Config	3
+main.c:220:13:MX_TIM2_Init	6
+main.c:278:13:MX_TIM10_Init	2
+main.c:309:13:MX_TIM11_Init	2
+main.c:340:13:MX_USART2_UART_Init	2
+main.c:371:13:MX_DMA_Init	1
+main.c:389:13:MX_GPIO_Init	1
+main.c:424:6:encoderSpeedReaderCycle	2
+main.c:441:6:SpeedMainShaft	2
+main.c:469:10:micros	1
+main.c:473:6:HAL_TIM_PeriodElapsedCallback	2
+main.c:486:6:Error_Handler	1
